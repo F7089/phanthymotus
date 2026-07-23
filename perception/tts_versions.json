@@ -61,17 +61,16 @@
   ],
   "next_push_plan": {
     "git": [
-      "model_downloader: 区分 tts_melo (FP32) / tts_melo_int8",
-      "config.yaml: num_threads 6（Jetson 实测最优）",
-      "tts.py: 加载日志打印 model_size_mb"
+      "config: 默认 tts_melo 44.1k FP32 + text frontend + wetext",
+      "并发形态保持 d7465a1：resident CUDA OfflineTts、warmup、无 flock/load-drop"
     ],
     "juicefs_cloud_desktop": [
+      "确认 vits-melo-tts-zh_en.tar.bz2 来自 FP32 目录（model.onnx ~163MB，不是 ~51MB int8）",
       "cd /mnt/data/fanyi/phanthymotus_tts",
+      "ls -lh vits-melo-tts-zh_en/model.onnx",
       "tar cjf vits-melo-tts-zh_en.tar.bz2 vits-melo-tts-zh_en/",
-      "tar cjf vits-melo-tts-zh_en_int8.tar.bz2 vits-melo-tts-zh_en_int8/",
-      "cp *.tar.bz2 到 JuiceFS 挂载目录（与 model_downloader URL 一致）",
-      "Jetson 上删旧模型目录后 restart，避免 already exists 跳过下载"
+      "cp 到 JuiceFS；评测机删旧 /models/vits-melo-tts-zh_en 后重下"
     ],
-    "leaderboard": "继续交 8k；44k FP32 仅对比测试"
+    "leaderboard": "试交 44.1k FP32（可能超 50MB 门禁）；失败则回 8k"
   }
 }

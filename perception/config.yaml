@@ -21,8 +21,9 @@ plugins:
   tts:
     enabled: true
     backend: vits
-    model_name: tts_melo_8k
-    model_dir: /models/vits-melo-tts-zh_en-8k
+    # 44.1k FP32（非量化）；JuiceFS 包须来自 vits-melo-tts-zh_en/（~163MB），勿用 _int8
+    model_name: tts_melo
+    model_dir: /models/vits-melo-tts-zh_en
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0
