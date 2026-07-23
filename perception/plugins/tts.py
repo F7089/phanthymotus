@@ -59,6 +59,31 @@ _STRONG_SENTENCE_END = frozenset("。！？!?；;")
 _WEAK_SENTENCE_END = frozenset("，,、：:")
 _CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
 
+_tn_normalizer = None
+
+
+def _normalize_tts_text(text: str) -> str:
+    """WeText TN before split/synthesize (numbers, dates, zh/en mixed text)."""
+    global _tn_normalizer
+    if not text or not text.strip():
+        return text
+    try:
+        if _tn_normalizer is None:
+            from wetext import Normalizer
+
+            _tn_normalizer = Normalizer(lang="auto", operator="tn")
+        normalized = _tn_normalizer.normalize(text)
+        if normalized != text:
+            log.info(
+                f"[tts] text normalized ({len(text)}->{len(normalized)} chars): "
+                f"{text[:48]!r} -> {normalized[:48]!r}"
+            )
+        return normalized
+    except Exception as e:
+        log.warning(f"[tts] text normalization skipped: {e}")
+        return text
+
+
 _LOW_LAT_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     history=HistoryPolicy.KEEP_LAST,
@@ -221,6 +246,8 @@ class TTSAdapter(ABC):
     def _synthesize_segment(self, text: str) -> bytes: ...
 
     def split_text(self, text: str) -> list[str]:
+        if getattr(self, "text_normalize", True):
+            text = _normalize_tts_text(text)
         max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
         return _split_text_for_tts(text, max_chars)
 
@@ -403,6 +430,7 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
     else:
         adapter = SherpaOnnxTTSAdapter(model_dir, speaker_id, speed)
     adapter.max_segment_chars = int(cfg.get("max_segment_chars", MAX_SEGMENT_CHARS))
+    adapter.text_normalize = bool(cfg.get("text_normalize", True))
     return adapter
 
 
@@ -647,6 +675,8 @@ def _warmup_tts_adapter(adapter: TTSAdapter, text: str = "。") -> None:
     """Run one silent synthesis to warm up ORT/CUDA before the first speak request."""
     import time as _time
 
+    if getattr(adapter, "text_normalize", True):
+        text = _normalize_tts_text(text)
     log.info(f"[tts] warmup starting: text={text!r}")
     t0 = _time.monotonic()
     pcm = adapter._synthesize_segment(text)

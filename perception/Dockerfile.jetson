@@ -76,7 +76,7 @@ RUN cd /ros_ws && \
 
 # ── Python deps ────────────────────────────────────────────────────
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
-    pyyaml requests websockets webrtcvad websocket-client dashscope psutil && \
+    pyyaml requests websockets webrtcvad websocket-client dashscope psutil wetext && \
     pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
 
 # ── HTMSG deps (KISS-ICP + future semantic) ──────────────────────

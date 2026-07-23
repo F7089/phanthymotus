@@ -27,6 +27,7 @@ plugins:
     num_threads: 2
     speaker_id: 0
     speed: 1.0
+    text_normalize: true
     max_segment_chars: 60
     warmup: true
     warmup_async: false
