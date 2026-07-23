@@ -59,26 +59,23 @@ _STRONG_SENTENCE_END = frozenset("。！？!?；;")
 _WEAK_SENTENCE_END = frozenset("，,、：:")
 _CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
 
-_tn_normalizer = None
+_tn_normalizer = None  # legacy; normalization via utils.tts_text_frontend
 
 
 def _normalize_tts_text(text: str) -> str:
-    """WeText TN before split/synthesize (numbers, dates, zh/en mixed text)."""
-    global _tn_normalizer
+    """Acronym expand + lead text_process (numbers/units) + WeText."""
     if not text or not text.strip():
         return text
     try:
-        if _tn_normalizer is None:
-            from wetext import Normalizer
+        from utils.tts_text_frontend import normalize_for_tts
 
-            _tn_normalizer = Normalizer(lang="auto", operator="tn")
-        normalized = _tn_normalizer.normalize(text)
-        if normalized != text:
-            log.info(
-                f"[tts] text normalized ({len(text)}->{len(normalized)} chars): "
-                f"{text[:48]!r} -> {normalized[:48]!r}"
-            )
-        return normalized
+        return normalize_for_tts(
+            text,
+            expand_acronyms=True,
+            use_text_process=True,
+            use_wetext=True,
+            language="zh",
+        )
     except Exception as e:
         log.warning(f"[tts] text normalization skipped: {e}")
         return text

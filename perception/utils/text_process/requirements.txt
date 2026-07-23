@@ -1,0 +1,7 @@
+jieba
+jieba_fast
+pypinyin
+inflect
+fast_langdetect
+split_lang
+cn2an

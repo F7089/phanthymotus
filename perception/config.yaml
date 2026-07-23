@@ -28,6 +28,7 @@ plugins:
     speaker_id: 0
     speed: 0.85
     text_normalize: true
+    # acronym expand + lead text_process (numbers/units) + wetext
     max_segment_chars: 60
     warmup: true
     warmup_async: false
