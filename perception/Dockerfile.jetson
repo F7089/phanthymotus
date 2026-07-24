@@ -17,6 +17,9 @@ ARG PYTORCH_DONOR=docker.m.daocloud.io/dustynv/l4t-pytorch:r36.4.0
 ARG BASE_IMAGE=
 ARG SHERPA_ONNX_ENABLE_GPU=ON
 ARG SHERPA_ONNX_GPU_ORT_VERSION=1.18.1
+# Pin: master HEAD (2026-07-23+) breaks with ORT 1.18.1 (Ort::Value / nullptr).
+# 3a1d3b2 = 2026-07-20, around the last known-good Jetson GPU builds.
+ARG SHERPA_ONNX_GIT_REF=3a1d3b278988bd50683389ddd667f1b1891d4131
 ARG SKIP_VOP_DEPS=ON
 
 # ── Stage: jp6-torch (same as deploy/prepare_jp_v6_local.sh) ───────
@@ -40,7 +43,7 @@ RUN cd /tmp/pt-donor && \
 
 # Use pre-built BASE_IMAGE when set; otherwise use inline jp6-torch-built
 FROM ${BASE_IMAGE:-jp6-torch-built}
-ARG PYPI_MIRROR APT_MIRROR SHERPA_ONNX_ENABLE_GPU SHERPA_ONNX_GPU_ORT_VERSION SKIP_VOP_DEPS
+ARG PYPI_MIRROR APT_MIRROR SHERPA_ONNX_ENABLE_GPU SHERPA_ONNX_GPU_ORT_VERSION SHERPA_ONNX_GIT_REF SKIP_VOP_DEPS
 
 # jp6/dustynv base sets PIP_INDEX_URL=jetson.webredirect.org (often unreachable)
 ENV PIP_INDEX_URL=${PYPI_MIRROR} \
@@ -119,8 +122,11 @@ ENV YOLO_CONFIG_DIR=/work
 # use setup.py build + copy site-packages instead.
 RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
         pip3 uninstall -y sherpa-onnx 2>/dev/null || true; \
-        git clone --depth 1 https://github.com/k2-fsa/sherpa-onnx /tmp/sherpa-onnx && \
-        cd /tmp/sherpa-onnx && \
+        mkdir -p /tmp/sherpa-onnx && cd /tmp/sherpa-onnx && \
+        git init && \
+        git remote add origin https://github.com/k2-fsa/sherpa-onnx && \
+        git fetch --depth 1 origin "${SHERPA_ONNX_GIT_REF}" && \
+        git checkout FETCH_HEAD && \
         export SHERPA_ONNX_CMAKE_ARGS="-DSHERPA_ONNX_ENABLE_GPU=ON \
 -DSHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION=${SHERPA_ONNX_GPU_ORT_VERSION} \
 -DBUILD_SHARED_LIBS=ON \
