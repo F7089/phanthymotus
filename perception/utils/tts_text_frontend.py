@@ -1,4 +1,12 @@
-"""TTS text frontend: acronym expand + lead text_process + WeText."""
+"""TTS text frontend: compound split + acronym expand + lead text_process + WeText.
+
+Aligned with cloud listen tests (tts_stream_lab):
+  - non-word compounds → split (deepseek → deep seek)
+  - real English words kept (offer / Nike / python …)
+  - ALLCAPS acronyms → letter-split (AI → A I, IT → I T)
+  - 藏族/藏文/藏塔 → 臧… (heteronym hack without FST)
+  - wetext + optional lead text_process
+"""
 from __future__ import annotations
 
 import logging
@@ -6,13 +14,74 @@ import re
 
 log = logging.getLogger(__name__)
 
-# Whole English words / brands that must NOT be letter-split.
+# Longer keys first via sort at apply time.
+_SPLIT_COMPOUNDS: list[tuple[str, str]] = [
+    ("Apple Pay", "Apple Pay"),
+    ("apple pay", "Apple Pay"),
+    ("photoshop", "photo shop"),
+    ("Photoshop", "photo shop"),
+    ("PHOTOSHOP", "photo shop"),
+    ("deepseek", "deep seek"),
+    ("DeepSeek", "deep seek"),
+    ("Deepseek", "deep seek"),
+    ("DEEPSEEK", "deep seek"),
+    ("roadmap", "road map"),
+    ("Roadmap", "road map"),
+    ("ROADMAP", "road map"),
+    ("iPhone", "i phone"),
+    ("iphone", "i phone"),
+    ("IPHONE", "i phone"),
+    ("iPad", "i pad"),
+    ("ipad", "i pad"),
+    ("IPAD", "i pad"),
+    ("iCloud", "i cloud"),
+    ("icloud", "i cloud"),
+    ("newapp", "new app"),
+    ("藏族", "臧族"),
+    ("藏文", "臧文"),
+    ("藏塔", "臧塔"),
+]
+
 _KEEP_AS_WORD = frozenset(
     w.lower()
     for w in (
+        "offer",
+        "python",
+        "java",
+        "nike",
+        "twitter",
+        "facebook",
+        "apple",
+        "product",
+        "review",
+        "thanks",
+        "smooth",
+        "team",
+        "leader",
+        "deadline",
+        "project",
+        "mac",
+        "lucy",
+        "hi",
+        "photo",
+        "shop",
+        "deep",
+        "seek",
+        "road",
+        "map",
+        "phone",
+        "pad",
+        "cloud",
+        "new",
+        "app",
+        "common",
+        "questions",
+        "technical",
+        "issues",
         "bluetooth",
         "online",
         "offline",
+        "wifi",
         "loading",
         "connected",
         "disconnected",
@@ -62,12 +131,10 @@ _KEEP_AS_WORD = frozenset(
         "jetson",
         "orin",
         "docker",
-        "python",
         "ubuntu",
         "linux",
         "windows",
         "android",
-        "apple",
         "google",
         "microsoft",
         "amazon",
@@ -81,15 +148,28 @@ _KEEP_AS_WORD = frozenset(
         "fastdds",
         "tensorrt",
         "kubernetes",
-        "wifi",
     )
 )
 
-# Always letter-split these (even if they look like words).
 _FORCE_SPELL = frozenset(
     w.upper()
     for w in (
         "AI",
+        "IT",
+        "FAQ",
+        "CEO",
+        "CTO",
+        "CFO",
+        "IPO",
+        "OA",
+        "POS",
+        "ATM",
+        "KTV",
+        "IELTS",
+        "GPS",
+        "PPT",
+        "UX",
+        "UI",
         "CPU",
         "GPU",
         "NPU",
@@ -115,7 +195,6 @@ _FORCE_SPELL = frozenset(
         "LED",
         "LCD",
         "OLED",
-        "GPS",
         "NFC",
         "BLE",
         "MQTT",
@@ -143,12 +222,24 @@ _FORCE_SPELL = frozenset(
         "IP",
         "ID",
         "OS",
-        "UI",
-        "UX",
+        "KPI",
+        "PR",
+        "HR",
+        "MVP",
+        "NDA",
     )
 )
 
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*|Wi-?Fi|wi-?fi")
+
+
+def apply_compound_split(text: str) -> str:
+    if not text:
+        return text
+    for src, dst in sorted(_SPLIT_COMPOUNDS, key=lambda x: len(x[0]), reverse=True):
+        if src in text:
+            text = text.replace(src, dst)
+    return text
 
 
 def expand_en_acronyms(text: str) -> str:
@@ -158,13 +249,13 @@ def expand_en_acronyms(text: str) -> str:
 
     def _repl(m: re.Match) -> str:
         tok = m.group(0)
-        raw = tok
-        # Normalize Wi-Fi variants
         if tok.lower().replace("-", "") == "wifi":
             return "Wi Fi"
         upper = tok.upper()
         lower = tok.lower()
-        if upper in _FORCE_SPELL or (
+        if upper in _FORCE_SPELL and tok.isupper():
+            return " ".join(list(upper))
+        if (
             tok.isupper()
             and 2 <= len(tok) <= 6
             and tok.isalpha()
@@ -172,8 +263,8 @@ def expand_en_acronyms(text: str) -> str:
         ):
             return " ".join(list(upper))
         if lower in _KEEP_AS_WORD:
-            return raw
-        return raw
+            return tok
+        return tok
 
     return _TOKEN_RE.sub(_repl, text)
 
@@ -194,7 +285,6 @@ def apply_wetext(text: str) -> str:
     try:
         from wetext import Normalizer
 
-        # Lazy singleton via function attribute
         tn = getattr(apply_wetext, "_tn", None)
         if tn is None:
             tn = Normalizer(lang="auto", operator="tn")
@@ -217,6 +307,7 @@ def normalize_for_tts(
     if not text or not text.strip():
         return text
     original = text
+    text = apply_compound_split(text)
     if expand_acronyms:
         text = expand_en_acronyms(text)
     if use_text_process:
@@ -228,7 +319,7 @@ def normalize_for_tts(
             "[tts] text frontend (%s->%s chars): %r -> %r",
             len(original),
             len(text),
-            original[:48],
-            text[:48],
+            original[:64],
+            text[:64],
         )
     return text

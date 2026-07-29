@@ -21,15 +21,15 @@ plugins:
   tts:
     enabled: true
     backend: vits
-    # 44.1k FP32（非量化）；JuiceFS 包须来自 vits-melo-tts-zh_en/（~163MB），勿用 _int8
-    model_name: tts_melo
-    model_dir: /models/vits-melo-tts-zh_en
+    # 8k Melo（≤50MB）+ 云上听测同款前处理：拆词/缩写/wetext/分句后去句号；speed=0.85
+    model_name: tts_melo_8k
+    model_dir: /models/vits-melo-tts-zh_en-8k
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0
     speed: 0.85
     text_normalize: true
-    # acronym expand + lead text_process (numbers/units) + wetext
+    # compound split + acronym + lead text_process + wetext；分句后去句号见 tts.py
     max_segment_chars: 60
     warmup: true
     warmup_async: false

@@ -238,6 +238,17 @@ def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[s
 
     return segments
 
+
+def _strip_sentence_punct(segment: str) -> str:
+    """After split: replace sentence-end marks with spaces; keep commas."""
+    import re
+
+    if not segment:
+        return segment
+    out = re.sub(r"[。．\.！!？\?；;]+", " ", segment)
+    return re.sub(r"\s+", " ", out).strip()
+
+
 class TTSAdapter(ABC):
     @abstractmethod
     def _synthesize_segment(self, text: str) -> bytes: ...
@@ -260,7 +271,10 @@ class TTSAdapter(ABC):
         """Synthesize pre-split segments and yield one continuous PCM stream."""
         buffer = b""
         for segment in segments:
-            buffer += self._synthesize_segment(segment)
+            spoken = _strip_sentence_punct(segment)
+            if not spoken:
+                continue
+            buffer += self._synthesize_segment(spoken)
             while len(buffer) >= CHUNK_BYTES:
                 yield buffer[:CHUNK_BYTES]
                 buffer = buffer[CHUNK_BYTES:]
