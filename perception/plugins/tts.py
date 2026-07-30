@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-plugins/tts.py — TTSPlugin: sherpa-onnx VITS TTS.
+plugins/tts.py — TTSPlugin: sherpa-onnx offline TTS (VITS / Kokoro / Matcha).
 
-On-device text-to-speech using sherpa-onnx MeloTTS (Chinese + English).
+Default leaderboard path: Kokoro int8 multi-lang or Melo VITS via config backend.
 """
 
 from __future__ import annotations
@@ -369,6 +369,104 @@ class SherpaOnnxVitsTTSAdapter(TTSAdapter):
         return _float_samples_to_pcm16(samples)
 
 
+def _resolve_kokoro_model_path(model_dir: str) -> tuple[str, float]:
+    """Return (onnx path, size_mb). Prefer model.onnx, else model.int8.onnx."""
+    import os
+
+    for name in ("model.onnx", "model.int8.onnx"):
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            return path, size_mb
+    raise FileNotFoundError(
+        f"no Kokoro model.onnx under {model_dir} (expected model.onnx or model.int8.onnx)"
+    )
+
+
+def _kokoro_lexicon_csv(model_dir: str) -> str:
+    import os
+
+    parts = []
+    for name in (
+        "lexicon-us-en.txt",
+        "lexicon-gb-en.txt",
+        "lexicon-zh.txt",
+    ):
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            parts.append(path)
+    return ",".join(parts)
+
+
+class SherpaOnnxKokoroTTSAdapter(TTSAdapter):
+    """On-device TTS using sherpa-onnx Kokoro (e.g. kokoro-int8-multi-lang-v1_1)."""
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 45,
+        speed: float = 1.0,
+        model_name: str = "tts_kokoro_int8",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+    ):
+        import os
+        from utils.model_downloader import ensure_model
+
+        ensure_model(model_name, model_dir)
+
+        import sherpa_onnx
+
+        mem_before = _process_rss_mb()
+        model_path, model_size_mb = _resolve_kokoro_model_path(model_dir)
+        voices_path = os.path.join(model_dir, "voices.bin")
+        tokens_path = os.path.join(model_dir, "tokens.txt")
+        data_dir = os.path.join(model_dir, "espeak-ng-data")
+        if not os.path.isdir(data_dir):
+            data_dir = ""
+
+        rule_fsts = []
+        for name in ("date-zh.fst", "number-zh.fst", "phone-zh.fst"):
+            p = os.path.join(model_dir, name)
+            if os.path.exists(p):
+                rule_fsts.append(p)
+
+        length_scale = 1.0 / speed if speed else 1.0
+        tts_config = sherpa_onnx.OfflineTtsConfig(
+            model=sherpa_onnx.OfflineTtsModelConfig(
+                kokoro=sherpa_onnx.OfflineTtsKokoroModelConfig(
+                    model=model_path,
+                    voices=voices_path,
+                    tokens=tokens_path,
+                    data_dir=data_dir,
+                    lexicon=_kokoro_lexicon_csv(model_dir),
+                    length_scale=length_scale,
+                ),
+                num_threads=num_threads,
+                provider=hw_provider,
+            ),
+            rule_fsts=",".join(rule_fsts) if rule_fsts else "",
+        )
+        self._tts = sherpa_onnx.OfflineTts(tts_config)
+        self._sid = speaker_id
+        self._speed = speed
+        self._model_sr = self._tts.sample_rate
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] sherpa-onnx Kokoro loaded: model_dir={model_dir}, "
+            f"model={os.path.basename(model_path)}, sample_rate={self._model_sr}, "
+            f"model_size_mb={model_size_mb:.1f}, speaker_id={speaker_id}, speed={speed}, "
+            f"provider={hw_provider}, num_threads={num_threads}, "
+            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
+        samples = _resample_to_16k(audio.samples, self._model_sr)
+        return _float_samples_to_pcm16(samples)
+
+
 class SherpaOnnxTTSAdapter(TTSAdapter):
     """On-device TTS using sherpa-onnx Matcha (flow-matching, fast non-autoregressive)."""
 
@@ -429,7 +527,16 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
     speaker_id = int(cfg.get("speaker_id", 0))
     speed = float(cfg.get("speed", 1.0))
     backend = cfg.get("backend", "vits")
-    if backend == "vits":
+    if backend == "kokoro":
+        adapter = SherpaOnnxKokoroTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_kokoro_int8"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+        )
+    elif backend == "vits":
         adapter = SherpaOnnxVitsTTSAdapter(
             model_dir,
             speaker_id,
@@ -742,7 +849,7 @@ class TTSPlugin:
         self._instance_configs: dict[str, dict] = {}
         self._executor = executor
         log.info(
-            f"[tts] plugin init: sherpa-onnx VITS, "
+            f"[tts] plugin init: sherpa-onnx {plugin_cfg.get('backend', 'vits')}, "
             f"speaker_id={plugin_cfg.get('speaker_id', 0)}, "
             f"speed={plugin_cfg.get('speed', 1.0)}, "
             f"max_segment_chars={plugin_cfg.get('max_segment_chars', MAX_SEGMENT_CHARS)}, "

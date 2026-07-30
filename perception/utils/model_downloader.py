@@ -69,6 +69,10 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/zh_finetuned.tar.bz2",
         "check_file": "model.onnx",
     },
+    "tts_kokoro_int8": {
+        "url": f"{JUICEFS_BASE}/kokoro-int8-multi-lang-v1_1.tar.bz2",
+        "check_file": "voices.bin",
+    },
     "kws": {
         "url": f"{COS_BASE}/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
         "check_file": "tokens.txt",
