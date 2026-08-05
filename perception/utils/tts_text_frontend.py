@@ -1,10 +1,8 @@
-"""TTS text frontend: compound split + acronym expand + lead text_process + WeText.
+"""TTS text frontend: acronym expand + lead text_process + WeText.
 
 Pipeline:
-  - non-word compounds → split (deepseek → deep seek)
-  - real English words kept intact
-  - ALLCAPS Latin tokens (len>=2) → letter-split
-  - 藏族/藏文/藏塔 → 臧… (heteronym without FST)
+  - Chinese heteronym fixes (藏… → 臧…)
+  - ALLCAPS Latin tokens (len>=2) → letter-split; other English kept for lexicon
   - wetext + optional lead text_process
 """
 from __future__ import annotations
@@ -14,236 +12,20 @@ import re
 
 log = logging.getLogger(__name__)
 
-# Longer keys first via sort at apply time.
-_SPLIT_COMPOUNDS: list[tuple[str, str]] = [
-    ("Apple Pay", "Apple Pay"),
-    ("apple pay", "Apple Pay"),
-    ("photoshop", "photo shop"),
-    ("Photoshop", "photo shop"),
-    ("PHOTOSHOP", "photo shop"),
-    ("deepseek", "deep seek"),
-    ("DeepSeek", "deep seek"),
-    ("Deepseek", "deep seek"),
-    ("DEEPSEEK", "deep seek"),
-    ("roadmap", "road map"),
-    ("Roadmap", "road map"),
-    ("ROADMAP", "road map"),
-    ("iPhone", "i phone"),
-    ("iphone", "i phone"),
-    ("IPHONE", "i phone"),
-    ("iPad", "i pad"),
-    ("ipad", "i pad"),
-    ("IPAD", "i pad"),
-    ("iCloud", "i cloud"),
-    ("icloud", "i cloud"),
-    ("newapp", "new app"),
+# Chinese heteronyms sherpa lexicon/FST does not cover well.
+_CN_HETERONYM_FIXES: list[tuple[str, str]] = [
     ("藏族", "臧族"),
     ("藏文", "臧文"),
     ("藏塔", "臧塔"),
 ]
 
-_KEEP_AS_WORD = frozenset(
-    w.lower()
-    for w in (
-        "offer",
-        "python",
-        "java",
-        "nike",
-        "twitter",
-        "facebook",
-        "apple",
-        "pay",
-        "product",
-        "review",
-        "thanks",
-        "smooth",
-        "team",
-        "leader",
-        "deadline",
-        "project",
-        "mac",
-        "lucy",
-        "hi",
-        "ppt",
-        "photo",
-        "shop",
-        "deep",
-        "seek",
-        "road",
-        "map",
-        "phone",
-        "pad",
-        "cloud",
-        "new",
-        "app",
-        "common",
-        "questions",
-        "technical",
-        "issues",
-        "photoshop",
-        "deepseek",
-        "roadmap",
-        "iphone",
-        "ipad",
-        "bluetooth",
-        "online",
-        "offline",
-        "wifi",
-        "loading",
-        "connected",
-        "disconnected",
-        "successful",
-        "failed",
-        "warning",
-        "error",
-        "update",
-        "download",
-        "upload",
-        "settings",
-        "cancel",
-        "confirm",
-        "restart",
-        "timeout",
-        "retry",
-        "ready",
-        "busy",
-        "idle",
-        "running",
-        "stopped",
-        "paused",
-        "resume",
-        "cache",
-        "memory",
-        "network",
-        "wireless",
-        "password",
-        "username",
-        "account",
-        "message",
-        "notification",
-        "permission",
-        "authentication",
-        "authorization",
-        "firewall",
-        "proxy",
-        "latency",
-        "throughput",
-        "bandwidth",
-        "speaker",
-        "microphone",
-        "camera",
-        "sensor",
-        "battery",
-        "temperature",
-        "jetson",
-        "orin",
-        "docker",
-        "ubuntu",
-        "linux",
-        "windows",
-        "android",
-        "google",
-        "microsoft",
-        "amazon",
-        "nvidia",
-        "intel",
-        "openai",
-        "tesla",
-        "github",
-        "huggingface",
-        "melotts",
-        "fastdds",
-        "tensorrt",
-        "kubernetes",
-    )
-)
-
-_FORCE_SPELL = frozenset(
-    w.upper()
-    for w in (
-        "AI",
-        "IT",
-        "FAQ",
-        "CEO",
-        "CTO",
-        "CFO",
-        "IPO",
-        "OA",
-        "POS",
-        "ATM",
-        "KTV",
-        "IELTS",
-        "GPS",
-        "PPT",
-        "UX",
-        "UI",
-        "CPU",
-        "GPU",
-        "NPU",
-        "CUDA",
-        "USB",
-        "HDMI",
-        "HTTP",
-        "HTTPS",
-        "API",
-        "SDK",
-        "ONNX",
-        "TTS",
-        "ASR",
-        "OCR",
-        "TCP",
-        "UDP",
-        "SSH",
-        "DNS",
-        "VPN",
-        "SSD",
-        "RAM",
-        "ROM",
-        "LED",
-        "LCD",
-        "OLED",
-        "NFC",
-        "BLE",
-        "MQTT",
-        "ROS",
-        "DDS",
-        "MCP",
-        "JSON",
-        "YAML",
-        "XML",
-        "HTML",
-        "CSS",
-        "SQL",
-        "LLM",
-        "VITS",
-        "RTF",
-        "TTFT",
-        "PCM",
-        "WAV",
-        "MP3",
-        "AAC",
-        "OPUS",
-        "PDF",
-        "URL",
-        "UUID",
-        "IP",
-        "ID",
-        "OS",
-        "KPI",
-        "PR",
-        "HR",
-        "MVP",
-        "NDA",
-    )
-)
-
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*|Wi-?Fi|wi-?fi")
 
 
-def apply_compound_split(text: str) -> str:
+def apply_cn_heteronym_fix(text: str) -> str:
     if not text:
         return text
-    for src, dst in sorted(_SPLIT_COMPOUNDS, key=lambda x: len(x[0]), reverse=True):
+    for src, dst in _CN_HETERONYM_FIXES:
         if src in text:
             text = text.replace(src, dst)
     return text
@@ -303,7 +85,7 @@ def normalize_for_tts(
     if not text or not text.strip():
         return text
     original = text
-    text = apply_compound_split(text)
+    text = apply_cn_heteronym_fix(text)
     if expand_acronyms:
         text = expand_en_acronyms(text)
     if use_text_process:
