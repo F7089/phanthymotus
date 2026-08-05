@@ -31,7 +31,7 @@ def expand_en_acronyms(text: str) -> str:
 
 
 def apply_lead_text_process(text: str, language: str = "zh") -> str:
-    """Numbers/units/NSW via lead's text_process (best-best-effort)."""
+    """Numbers/units/NSW via lead's text_process (best-effort)."""
     try:
         from utils.text_process.cleaner import text_preprocess
 
