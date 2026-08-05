@@ -1,7 +1,6 @@
 """TTS text frontend: acronym expand + lead text_process + WeText.
 
 Pipeline:
-  - Chinese heteronym fixes (藏… → 臧…)
   - ALLCAPS Latin tokens (len>=2) → letter-split; other English kept for lexicon
   - wetext + optional lead text_process
 """
@@ -12,23 +11,7 @@ import re
 
 log = logging.getLogger(__name__)
 
-# Chinese heteronyms sherpa lexicon/FST does not cover well.
-_CN_HETERONYM_FIXES: list[tuple[str, str]] = [
-    ("藏族", "臧族"),
-    ("藏文", "臧文"),
-    ("藏塔", "臧塔"),
-]
-
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*|Wi-?Fi|wi-?fi")
-
-
-def apply_cn_heteronym_fix(text: str) -> str:
-    if not text:
-        return text
-    for src, dst in _CN_HETERONYM_FIXES:
-        if src in text:
-            text = text.replace(src, dst)
-    return text
 
 
 def expand_en_acronyms(text: str) -> str:
@@ -48,7 +31,7 @@ def expand_en_acronyms(text: str) -> str:
 
 
 def apply_lead_text_process(text: str, language: str = "zh") -> str:
-    """Numbers/units/NSW via lead's text_process (best-effort)."""
+    """Numbers/units/NSW via lead's text_process (best-best-effort)."""
     try:
         from utils.text_process.cleaner import text_preprocess
 
@@ -85,7 +68,6 @@ def normalize_for_tts(
     if not text or not text.strip():
         return text
     original = text
-    text = apply_cn_heteronym_fix(text)
     if expand_acronyms:
         text = expand_en_acronyms(text)
     if use_text_process:
