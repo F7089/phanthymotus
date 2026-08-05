@@ -2,7 +2,7 @@
 """
 plugins/tts.py — TTSPlugin: sherpa-onnx offline TTS (VITS / Kokoro / Matcha).
 
-Default leaderboard path: Kokoro int8 multi-lang or Melo VITS via config backend.
+Backend selected via config (vits / kokoro / matcha).
 """
 
 from __future__ import annotations

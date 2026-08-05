@@ -52,9 +52,9 @@ MODELS = {
         "check_file": "vocos-16khz-univ.onnx",
         "single_file": True,
     },
-    # FP32: pack from vits-melo-tts-zh_en/ (NOT vits-melo-tts-zh_en_int8/)
+    # 8k Melo: longanlingxin pack (model.onnx + lexicon + dict)
     "tts_melo_8k": {
-        "url": f"{JUICEFS_BASE}/vits-melo-tts-zh_en-8k.tar.bz2",
+        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-8k.tar.bz2",
         "check_file": "model.onnx",
     },
     "tts_melo": {

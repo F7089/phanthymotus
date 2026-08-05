@@ -20,13 +20,13 @@ plugins:
 
   tts:
     enabled: true
-    backend: kokoro
-    # Kokoro int8 multi-lang v1_1 + 同款前处理：拆词/缩写/wetext/分句后去句号；speed=0.85
-    model_name: tts_kokoro_int8
-    model_dir: /models/kokoro-int8-multi-lang-v1_1
+    backend: vits
+    # 8k Melo VITS（≤50MB）+ 前处理：拆词/缩写/wetext/分句后去句号；speed=0.85
+    model_name: tts_melo_8k
+    model_dir: /models/vits-melo-longanlingxin-8k
     hw_provider: cuda
     num_threads: 2
-    speaker_id: 45  # zf_xiaobei (中文女声)，见 sherpa Kokoro 文档 speaker map
+    speaker_id: 0
     speed: 0.85
     text_normalize: true
     # compound split + acronym + lead text_process + wetext；分句后去句号见 tts.py

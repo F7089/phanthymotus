@@ -1,10 +1,10 @@
 """TTS text frontend: compound split + acronym expand + lead text_process + WeText.
 
-Aligned with cloud listen tests (tts_stream_lab):
+Pipeline:
   - non-word compounds → split (deepseek → deep seek)
-  - real English words kept (offer / Nike / python …)
-  - ALLCAPS acronyms → letter-split (AI → A I, IT → I T)
-  - 藏族/藏文/藏塔 → 臧… (heteronym hack without FST)
+  - real English words kept intact
+  - ALLCAPS Latin tokens (len>=2) → letter-split
+  - 藏族/藏文/藏塔 → 臧… (heteronym without FST)
   - wetext + optional lead text_process
 """
 from __future__ import annotations
@@ -52,6 +52,7 @@ _KEEP_AS_WORD = frozenset(
         "twitter",
         "facebook",
         "apple",
+        "pay",
         "product",
         "review",
         "thanks",
@@ -63,6 +64,7 @@ _KEEP_AS_WORD = frozenset(
         "mac",
         "lucy",
         "hi",
+        "ppt",
         "photo",
         "shop",
         "deep",
@@ -78,6 +80,11 @@ _KEEP_AS_WORD = frozenset(
         "questions",
         "technical",
         "issues",
+        "photoshop",
+        "deepseek",
+        "roadmap",
+        "iphone",
+        "ipad",
         "bluetooth",
         "online",
         "offline",
@@ -243,7 +250,7 @@ def apply_compound_split(text: str) -> str:
 
 
 def expand_en_acronyms(text: str) -> str:
-    """Spell out ALLCAPS abbreviations; keep normal English words intact."""
+    """ALLCAPS Latin tokens (len>=2) → letter-split; other English kept as words."""
     if not text:
         return text
 
@@ -251,19 +258,8 @@ def expand_en_acronyms(text: str) -> str:
         tok = m.group(0)
         if tok.lower().replace("-", "") == "wifi":
             return "Wi Fi"
-        upper = tok.upper()
-        lower = tok.lower()
-        if upper in _FORCE_SPELL and tok.isupper():
-            return " ".join(list(upper))
-        if (
-            tok.isupper()
-            and 2 <= len(tok) <= 6
-            and tok.isalpha()
-            and lower not in _KEEP_AS_WORD
-        ):
-            return " ".join(list(upper))
-        if lower in _KEEP_AS_WORD:
-            return tok
+        if tok.isupper() and tok.isalpha() and len(tok) >= 2:
+            return " ".join(list(tok))
         return tok
 
     return _TOKEN_RE.sub(_repl, text)
