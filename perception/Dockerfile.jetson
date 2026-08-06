@@ -146,19 +146,16 @@ RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
 
 # ── Piper GPU ORT: real Jetson onnxruntime-gpu wheel (JP6 / cu126) ───
 # Do NOT overlay sherpa's libonnxruntime*.so onto PyPI CPU onnxruntime —
-# that mixes ABI and segfaults (Bus error / exit 139) on ctypes preload.
-# Use wget (not pip index): pip against jetson-ai-lab often hangs with no
-# progress on Jetson; direct wheel URL shows progress and retries cleanly.
-ARG ONNXRUNTIME_GPU_WHL_URL=https://pypi.jetson-ai-lab.io/jp6/cu126/+f/4eb/e6a8902dc7708/onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl
+# that mixes ABI and segfaults (Bus error / exit 139).
+# Prefer JuiceFS (LAN). US jetson-ai-lab is ~20KB/s on this Jetson (~70min).
+# pip requires a PEP 427 wheel filename — not a bare onnxruntime_gpu.whl.
+ARG ONNXRUNTIME_GPU_WHL_URL=http://172.28.4.81:34567/fanyi/phanthymotus_tts/onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl
+ARG ONNXRUNTIME_GPU_WHL_NAME=onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl
 RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
         pip3 uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true; \
-        apt-get -o Acquire::AllowInsecureRepositories=true update && \
-        apt-get install -y --no-install-recommends --allow-unauthenticated wget ca-certificates && \
-        wget --progress=dot:giga --timeout=60 --tries=5 -O /tmp/onnxruntime_gpu.whl \
-            "${ONNXRUNTIME_GPU_WHL_URL}" && \
-        pip3 install --no-cache-dir /tmp/onnxruntime_gpu.whl && \
-        rm -f /tmp/onnxruntime_gpu.whl && \
-        apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* && \
+        python3 -c "import os,urllib.request; url='${ONNXRUNTIME_GPU_WHL_URL}'; name='${ONNXRUNTIME_GPU_WHL_NAME}'; path='/tmp/'+name; print('downloading', url); urllib.request.urlretrieve(url, path); print('bytes', os.path.getsize(path))" && \
+        pip3 install --no-cache-dir "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
+        rm -f "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
         python3 -c "import onnxruntime as ort; p=ort.get_available_providers(); print('onnxruntime', ort.__version__, 'providers=', p); assert 'CUDAExecutionProvider' in p, p"; \
     else \
         pip3 install --no-cache-dir -i ${PYPI_MIRROR} onnxruntime; \
