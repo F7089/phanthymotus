@@ -42,5 +42,13 @@ source /opt/ros/humble/install/setup.bash
 log "sourcing /ros_ws/install/setup.bash"
 source /ros_ws/install/setup.bash
 
+# Piper ORT CUDA EP: sherpa ships libonnxruntime_providers_cuda.so here.
+if SHERPA_ORT_LIB="$(python3 -c 'import os,sherpa_onnx; print(os.path.join(os.path.dirname(sherpa_onnx.__file__), "lib"))' 2>/dev/null)"; then
+    if [ -d "${SHERPA_ORT_LIB}" ]; then
+        export LD_LIBRARY_PATH="${SHERPA_ORT_LIB}:${LD_LIBRARY_PATH}"
+        log "prepended sherpa ORT lib: ${SHERPA_ORT_LIB}"
+    fi
+fi
+
 log "launching /work/main.py"
 exec python3 /work/main.py

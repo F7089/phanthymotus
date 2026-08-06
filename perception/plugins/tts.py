@@ -53,6 +53,70 @@ def _process_rss_mb() -> float:
     return psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
 
 
+def _piper_ort_providers(hw_provider: str) -> tuple:
+    """Return (onnxruntime module, provider list) for Piper InferenceSession.
+
+    On Jetson, pip onnxruntime is CPU-only; Dockerfile overlays sherpa's CUDA
+    ORT libs into onnxruntime/capi. Also preload sherpa provider .so here in
+    case LD_LIBRARY_PATH alone is not enough.
+    """
+    import ctypes
+    import glob
+    import os
+
+    # Preload sherpa GPU ORT libs before importing onnxruntime when possible.
+    try:
+        import importlib.util
+
+        spec = importlib.util.find_spec("sherpa_onnx")
+        if spec is not None and spec.origin:
+            libdir = os.path.join(os.path.dirname(spec.origin), "lib")
+            if os.path.isdir(libdir):
+                os.environ["LD_LIBRARY_PATH"] = (
+                    libdir + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
+                )
+                for so in sorted(glob.glob(os.path.join(libdir, "libonnxruntime.so*"))):
+                    base = os.path.basename(so)
+                    # Prefer the real lib, skip pure versionless symlink loops.
+                    if base.count(".") >= 2 or base.endswith(".so"):
+                        try:
+                            ctypes.CDLL(so, mode=ctypes.RTLD_GLOBAL)
+                        except OSError:
+                            pass
+                for name in (
+                    "libonnxruntime_providers_shared.so",
+                    "libonnxruntime_providers_cuda.so",
+                ):
+                    path = os.path.join(libdir, name)
+                    if os.path.isfile(path):
+                        try:
+                            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+                        except OSError as e:
+                            log.warning(f"[tts] piper: preload {name} failed: {e}")
+    except Exception as e:
+        log.warning(f"[tts] piper: sherpa ORT preload skipped: {e}")
+
+    import onnxruntime as ort
+
+    providers = ["CPUExecutionProvider"]
+    if hw_provider == "cuda":
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" in available:
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        else:
+            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+            msg = (
+                "[tts] piper: CUDA requested but CUDAExecutionProvider missing; "
+                f"available={available}"
+            )
+            if require:
+                raise RuntimeError(
+                    msg + " (TTS_REQUIRE_CUDA=1). Rebuild image with sherpa GPU ORT overlay."
+                )
+            log.warning(msg + "; using CPU")
+    return ort, providers
+
+
 _maybe_set_cpu_affinity()
 
 _STRONG_SENTENCE_END = frozenset("。！？!?；;")
@@ -599,23 +663,19 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
         self._lexicon = self._load_arpabet_lexicon(lex_arg)
         self._model_sr = int((cfg.get("audio") or {}).get("sample_rate") or 22050)
 
-        import onnxruntime as ort
-
+        ort, providers = _piper_ort_providers(hw_provider)
         so = ort.SessionOptions()
         so.intra_op_num_threads = max(1, int(num_threads))
-        providers = ["CPUExecutionProvider"]
-        if hw_provider == "cuda":
-            # Prefer CUDA if available; fall back to CPU.
-            available = ort.get_available_providers()
-            if "CUDAExecutionProvider" in available:
-                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            else:
-                log.warning(
-                    "[tts] piper: CUDA requested but CUDAExecutionProvider missing; using CPU"
-                )
         self._sess = ort.InferenceSession(
             model_path, sess_options=so, providers=providers
         )
+        active = self._sess.get_providers()
+        if hw_provider == "cuda" and "CUDAExecutionProvider" not in active:
+            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+            msg = f"[tts] piper: session providers={active} (wanted CUDA)"
+            if require:
+                raise RuntimeError(msg)
+            log.warning(msg)
         self._input_names = {i.name for i in self._sess.get_inputs()}
         self._sid = int(speaker_id)
         self._speed = float(speed) if speed else 1.0
@@ -627,7 +687,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
         log.info(
             f"[tts] piper dual-G2P loaded: model_dir={model_dir}, "
             f"model_size_mb={model_size_mb:.1f}, sr={self._model_sr}, "
-            f"speed={self._speed}, providers={self._sess.get_providers()}, "
+            f"speed={self._speed}, providers={active}, "
             f"lexicon_size={len(self._lexicon)}, "
             f"rss_mb={mem_before:.1f}->{mem_after:.1f}"
         )

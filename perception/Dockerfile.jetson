@@ -78,10 +78,12 @@ RUN cd /ros_ws && \
     colcon build --packages-select audio_msgs --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 # ── Python deps ────────────────────────────────────────────────────
+# NOTE: do NOT pip-install onnxruntime here. aarch64 PyPI wheel is CPU-only.
+# Piper needs CUDA EP from the same GPU ORT sherpa ships (wired after sherpa build).
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
     pyyaml requests websockets webrtcvad websocket-client dashscope psutil wetext \
     jieba pypinyin cn2an inflect fast_langdetect split_lang \
-    g2p-en nltk onnxruntime && \
+    g2p-en nltk && \
     pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
 
 # ── HTMSG deps (KISS-ICP + future semantic) ──────────────────────
@@ -140,6 +142,20 @@ RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
         rm -rf /tmp/sherpa-onnx; \
     else \
         pip3 install --no-cache-dir -i ${PYPI_MIRROR} sherpa-onnx; \
+    fi
+
+# ── Piper GPU ORT: same CUDA12 libs sherpa already fetched ───────────
+# Install matching Python onnxruntime, then overlay sherpa's GPU .so into
+# onnxruntime/capi so InferenceSession can use CUDAExecutionProvider.
+COPY perception/deploy/wire_piper_ort_gpu.py /tmp/wire_piper_ort_gpu.py
+RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
+        pip3 uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true; \
+        pip3 install --no-cache-dir -i ${PYPI_MIRROR} "onnxruntime==${SHERPA_ONNX_GPU_ORT_VERSION}" && \
+        python3 /tmp/wire_piper_ort_gpu.py && \
+        ldconfig || true && \
+        python3 -c "import onnxruntime as ort; print('onnxruntime', ort.__version__, 'providers=', ort.get_available_providers())"; \
+    else \
+        pip3 install --no-cache-dir -i ${PYPI_MIRROR} onnxruntime; \
     fi
 
 # Piper dual-G2P needs g2p_en + CMUdict at runtime (no proxy required on build host).
