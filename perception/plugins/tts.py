@@ -574,6 +574,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
 
         import json
         import importlib
+        from pathlib import Path
 
         # Drop a stale module so config-rebuild / multi-instance reloads pick
         # up the package under model_dir (not a previous path).
@@ -583,6 +584,9 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
         self._encode_utterance = frontend.encode_utterance
         self._language_id_for_utterance = frontend.language_id_for_utterance
         self._load_arpabet_lexicon = frontend.load_arpabet_lexicon
+        # Cache phonemizers: EnglishPhonemizer/G2p init is expensive per call.
+        self._zh_ph = frontend.ChinesePhonemizer()
+        self._en_ph = frontend.EnglishPhonemizer()
 
         with open(config_path, encoding="utf-8") as f:
             cfg = json.load(f)
@@ -590,9 +594,9 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             k: ([int(x) for x in v] if isinstance(v, list) else [int(v)])
             for k, v in cfg["phoneme_id_map"].items()
         }
-        self._lexicon = self._load_arpabet_lexicon(
-            lexicon_path if os.path.isfile(lexicon_path) else None
-        )
+        # load_arpabet_lexicon expects pathlib.Path (uses .is_file/.read_text).
+        lex_arg = Path(lexicon_path) if os.path.isfile(lexicon_path) else None
+        self._lexicon = self._load_arpabet_lexicon(lex_arg)
         self._model_sr = int((cfg.get("audio") or {}).get("sample_rate") or 22050)
 
         import onnxruntime as ort
@@ -624,6 +628,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             f"[tts] piper dual-G2P loaded: model_dir={model_dir}, "
             f"model_size_mb={model_size_mb:.1f}, sr={self._model_sr}, "
             f"speed={self._speed}, providers={self._sess.get_providers()}, "
+            f"lexicon_size={len(self._lexicon)}, "
             f"rss_mb={mem_before:.1f}->{mem_after:.1f}"
         )
 
@@ -634,7 +639,11 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             return b""
         length_scale = 1.0 / self._speed if self._speed else 1.0
         _tok, phoneme_ids, prosody_dicts, _plan = self._encode_utterance(
-            text, self._id_map, lexicon=self._lexicon
+            text,
+            self._id_map,
+            lexicon=self._lexicon,
+            zh_ph=self._zh_ph,
+            en_ph=self._en_ph,
         )
         lid = int(self._language_id_for_utterance(text))
         feed = {
@@ -1197,6 +1206,8 @@ class TTSPlugin:
                 try:
                     self._adapter = _build_tts_adapter(self._cfg)
                     self._load_error = None
+                    # Init load failed earlier; warm now so first speak is not cold.
+                    _run_tts_warmup(self._adapter, self._cfg)
                 except Exception as e:
                     self._load_error = str(e)
                     log.error(f"[tts] config rebuild failed: {e}", exc_info=True)
