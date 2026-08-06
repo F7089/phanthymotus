@@ -13,17 +13,18 @@ log "starting (LD_PRELOAD=${LD_PRELOAD})"
 log "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-<unset>} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-<unset>}"
 
 if [ "${TTS_REQUIRE_CUDA:-1}" = "1" ]; then
-    log "checking CUDA via torch..."
-    if ! cuda_name="$(python3 - <<'PY'
+    log "checking CUDA via onnxruntime..."
+    if ! cuda_name="$(python3 - <<'ORTPY'
 import sys
 try:
-    import torch
+    import onnxruntime as ort
 except Exception:
     sys.exit(1)
-if not torch.cuda.is_available():
+providers = ort.get_available_providers()
+if "CUDAExecutionProvider" not in providers:
     sys.exit(1)
-print(torch.cuda.get_device_name(0))
-PY
+print("ORT-CUDA")
+ORTPY
     )"; then
         log "FATAL: hw_provider=cuda but CUDA is not available."
         log "judgeflow must start the container with GPU runtime, for example:"

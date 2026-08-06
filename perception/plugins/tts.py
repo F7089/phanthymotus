@@ -53,6 +53,18 @@ def _process_rss_mb() -> float:
     return psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
 
 
+
+def _piper_run(sess, ort_module, feeds):
+    """Run with GPU arena shrinkage after each call (best-effort)."""
+    try:
+        run_options = ort_module.RunOptions()
+        run_options.add_run_config_entry(
+            "memory.enable_memory_arena_shrinkage", "gpu:0"
+        )
+        return sess.run(None, feeds, run_options)
+    except Exception:
+        return sess.run(None, feeds)
+
 def _piper_ort_providers(hw_provider: str) -> tuple:
     """Return (onnxruntime module, provider list) for Piper InferenceSession.
 
@@ -68,7 +80,19 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            providers = [
+                (
+                    "CUDAExecutionProvider",
+                    {
+                        "device_id": 0,
+                        "arena_extend_strategy": "kSameAsRequested",
+                        "gpu_mem_limit": 384 * 1024 * 1024,
+                        "cudnn_conv_algo_search": "HEURISTIC",
+                        "cudnn_conv_use_max_workspace": "0",
+                    },
+                ),
+                "CPUExecutionProvider",
+            ]
         else:
             require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
             msg = (
@@ -633,6 +657,13 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
 
         ort, providers = _piper_ort_providers(hw_provider)
         so = ort.SessionOptions()
+        so.enable_cpu_mem_arena = False
+        so.enable_mem_pattern = False
+        so.intra_op_num_threads = 1
+        so.inter_op_num_threads = 1
+        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        so.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        so.add_session_config_entry("session.inter_op.allow_spinning", "0")
         so.intra_op_num_threads = max(1, int(num_threads))
         self._sess = ort.InferenceSession(
             model_path, sess_options=so, providers=providers
@@ -711,7 +742,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             feed["speaker_embedding"] = np.zeros((1, emb_dim), dtype=np.float32)
             feed["speaker_embedding_mask"] = np.array([[0]], dtype=np.int64)
 
-        audio = np.asarray(self._sess.run(None, feed)[0]).squeeze().astype(np.float32)
+        audio = np.asarray(_piper_run(self._sess, __import__('onnxruntime'), feed)[0]).squeeze().astype(np.float32)
         samples = _resample_to_16k(audio, self._model_sr)
         return _float_samples_to_pcm16(samples)
 
