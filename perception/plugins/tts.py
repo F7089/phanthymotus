@@ -56,45 +56,11 @@ def _process_rss_mb() -> float:
 def _piper_ort_providers(hw_provider: str) -> tuple:
     """Return (onnxruntime module, provider list) for Piper InferenceSession.
 
-    On Jetson, pip onnxruntime is CPU-only; Dockerfile overlays sherpa's CUDA
-    ORT libs into onnxruntime/capi. Also preload sherpa provider .so here in
-    case LD_LIBRARY_PATH alone is not enough.
+    Jetson image installs onnxruntime-gpu from Jetson AI Lab (JP6/cu126), which
+    exposes CUDAExecutionProvider natively. Do not ctypes-preload sherpa's ORT
+    libs into this process — that segfaults (exit 139).
     """
-    import ctypes
-    import glob
     import os
-
-    # Preload sherpa GPU ORT libs before importing onnxruntime when possible.
-    try:
-        import importlib.util
-
-        spec = importlib.util.find_spec("sherpa_onnx")
-        if spec is not None and spec.origin:
-            libdir = os.path.join(os.path.dirname(spec.origin), "lib")
-            if os.path.isdir(libdir):
-                os.environ["LD_LIBRARY_PATH"] = (
-                    libdir + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
-                )
-                for so in sorted(glob.glob(os.path.join(libdir, "libonnxruntime.so*"))):
-                    base = os.path.basename(so)
-                    # Prefer the real lib, skip pure versionless symlink loops.
-                    if base.count(".") >= 2 or base.endswith(".so"):
-                        try:
-                            ctypes.CDLL(so, mode=ctypes.RTLD_GLOBAL)
-                        except OSError:
-                            pass
-                for name in (
-                    "libonnxruntime_providers_shared.so",
-                    "libonnxruntime_providers_cuda.so",
-                ):
-                    path = os.path.join(libdir, name)
-                    if os.path.isfile(path):
-                        try:
-                            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
-                        except OSError as e:
-                            log.warning(f"[tts] piper: preload {name} failed: {e}")
-    except Exception as e:
-        log.warning(f"[tts] piper: sherpa ORT preload skipped: {e}")
 
     import onnxruntime as ort
 
@@ -111,7 +77,9 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
             )
             if require:
                 raise RuntimeError(
-                    msg + " (TTS_REQUIRE_CUDA=1). Rebuild image with sherpa GPU ORT overlay."
+                    msg
+                    + " (TTS_REQUIRE_CUDA=1). Rebuild with Jetson AI Lab "
+                    "onnxruntime-gpu (see Dockerfile.jetson)."
                 )
             log.warning(msg + "; using CPU")
     return ort, providers

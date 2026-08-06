@@ -78,8 +78,8 @@ RUN cd /ros_ws && \
     colcon build --packages-select audio_msgs --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 # ── Python deps ────────────────────────────────────────────────────
-# NOTE: do NOT pip-install onnxruntime here. aarch64 PyPI wheel is CPU-only.
-# Piper needs CUDA EP from the same GPU ORT sherpa ships (wired after sherpa build).
+# NOTE: do NOT pip-install PyPI onnxruntime here. aarch64 wheel is CPU-only.
+# Piper CUDA EP comes from Jetson AI Lab onnxruntime-gpu (installed after sherpa).
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
     pyyaml requests websockets webrtcvad websocket-client dashscope psutil wetext \
     jieba pypinyin cn2an inflect fast_langdetect split_lang \
@@ -144,16 +144,19 @@ RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
         pip3 install --no-cache-dir -i ${PYPI_MIRROR} sherpa-onnx; \
     fi
 
-# ── Piper GPU ORT: same CUDA12 libs sherpa already fetched ───────────
-# Install matching Python onnxruntime, then overlay sherpa's GPU .so into
-# onnxruntime/capi so InferenceSession can use CUDAExecutionProvider.
-COPY perception/deploy/wire_piper_ort_gpu.py /tmp/wire_piper_ort_gpu.py
+# ── Piper GPU ORT: real Jetson onnxruntime-gpu wheel (JP6 / cu126) ───
+# Do NOT overlay sherpa's libonnxruntime*.so onto PyPI CPU onnxruntime —
+# that mixes ABI and segfaults (Bus error / exit 139) on ctypes preload.
+# Jetson AI Lab ships a proper aarch64 CUDA EP wheel for JP6.
+ARG ONNXRUNTIME_GPU_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126
+ARG ONNXRUNTIME_GPU_VERSION=1.23.0
 RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
         pip3 uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true; \
-        pip3 install --no-cache-dir -i ${PYPI_MIRROR} "onnxruntime==${SHERPA_ONNX_GPU_ORT_VERSION}" && \
-        python3 /tmp/wire_piper_ort_gpu.py && \
-        ldconfig || true && \
-        python3 -c "import onnxruntime as ort; print('onnxruntime', ort.__version__, 'providers=', ort.get_available_providers())"; \
+        pip3 install --no-cache-dir \
+            --index-url "${ONNXRUNTIME_GPU_INDEX}" \
+            --extra-index-url "${PYPI_MIRROR}" \
+            "onnxruntime-gpu==${ONNXRUNTIME_GPU_VERSION}" && \
+        python3 -c "import onnxruntime as ort; p=ort.get_available_providers(); print('onnxruntime', ort.__version__, 'providers=', p); assert 'CUDAExecutionProvider' in p, p"; \
     else \
         pip3 install --no-cache-dir -i ${PYPI_MIRROR} onnxruntime; \
     fi
