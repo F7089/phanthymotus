@@ -20,16 +20,15 @@ plugins:
 
   tts:
     enabled: true
-    backend: vits
-    # 8k Melo VITS（≤50MB）+ 前处理：拆词/缩写/wetext/分句后去句号；speed=0.85
-    model_name: tts_melo_8k
-    model_dir: /models/vits-melo-longanlingxin-8k
+    # Piper dual-G2P MB-iSTFT (longanlingxin B2). Package: piper-longanlingxin-b2.tar.bz2
+    backend: piper
+    model_name: tts_piper_b2
+    model_dir: /models/piper-longanlingxin-b2
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0
     speed: 0.85
     text_normalize: true
-    # compound split + acronym + lead text_process + wetext；分句后去句号见 tts.py
     max_segment_chars: 60
     warmup: true
     warmup_async: false

@@ -520,6 +520,161 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         return _float_samples_to_pcm16(samples)
 
 
+class PiperDualG2PTTSAdapter(TTSAdapter):
+    """Piper-plus MB-iSTFT ONNX + dual ZH/EN frontend (package under model_dir).
+
+    Expected files in model_dir (from piper-longanlingxin-b2.tar.bz2):
+      model.onnx, model.onnx.json, product_lexicon_arpabet.json,
+      dual_zh_en_frontend.py, vendor/g2p/piper_plus_g2p/
+    """
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 0.85,
+        model_name: str = "tts_piper_b2",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+        noise_scale: float = 0.667,
+        noise_scale_w: float = 0.8,
+    ):
+        import os
+        import sys
+        from utils.model_downloader import ensure_model
+
+        ensure_model(model_name, model_dir)
+
+        mem_before = _process_rss_mb()
+        model_path = os.path.join(model_dir, "model.onnx")
+        config_path = os.path.join(model_dir, "model.onnx.json")
+        if not os.path.isfile(config_path):
+            alt = os.path.join(model_dir, "config.json")
+            config_path = alt if os.path.isfile(alt) else config_path
+        lexicon_path = os.path.join(model_dir, "product_lexicon_arpabet.json")
+        frontend_py = os.path.join(model_dir, "dual_zh_en_frontend.py")
+        vendor_g2p = os.path.join(model_dir, "vendor", "g2p")
+
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"missing {model_path}")
+        if not os.path.isfile(config_path):
+            raise FileNotFoundError(f"missing {config_path}")
+        if not os.path.isfile(frontend_py):
+            raise FileNotFoundError(f"missing {frontend_py}")
+
+        # Prefer package-local G2P + frontend (self-contained tar).
+        if os.path.isdir(vendor_g2p):
+            sys.path.insert(0, vendor_g2p)
+        sys.path.insert(0, model_dir)
+
+        import json
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "dual_zh_en_frontend", frontend_py
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load dual_zh_en_frontend from {frontend_py}")
+        frontend = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(frontend)
+
+        self._encode_utterance = frontend.encode_utterance
+        self._language_id_for_utterance = frontend.language_id_for_utterance
+        self._load_arpabet_lexicon = frontend.load_arpabet_lexicon
+
+        with open(config_path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        self._id_map = {
+            k: ([int(x) for x in v] if isinstance(v, list) else [int(v)])
+            for k, v in cfg["phoneme_id_map"].items()
+        }
+        self._lexicon = self._load_arpabet_lexicon(
+            lexicon_path if os.path.isfile(lexicon_path) else None
+        )
+        self._model_sr = int((cfg.get("audio") or {}).get("sample_rate") or 22050)
+
+        import onnxruntime as ort
+
+        so = ort.SessionOptions()
+        so.intra_op_num_threads = max(1, int(num_threads))
+        providers = ["CPUExecutionProvider"]
+        if hw_provider == "cuda":
+            # Prefer CUDA if available; fall back to CPU.
+            available = ort.get_available_providers()
+            if "CUDAExecutionProvider" in available:
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            else:
+                log.warning(
+                    "[tts] piper: CUDA requested but CUDAExecutionProvider missing; using CPU"
+                )
+        self._sess = ort.InferenceSession(
+            model_path, sess_options=so, providers=providers
+        )
+        self._input_names = {i.name for i in self._sess.get_inputs()}
+        self._sid = int(speaker_id)
+        self._speed = float(speed) if speed else 1.0
+        self._noise_scale = float(noise_scale)
+        self._noise_scale_w = float(noise_scale_w)
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] piper dual-G2P loaded: model_dir={model_dir}, "
+            f"model_size_mb={model_size_mb:.1f}, sr={self._model_sr}, "
+            f"speed={self._speed}, providers={self._sess.get_providers()}, "
+            f"rss_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        import numpy as np
+
+        if not text or not text.strip():
+            return b""
+        length_scale = 1.0 / self._speed if self._speed else 1.0
+        _tok, phoneme_ids, prosody_dicts, _plan = self._encode_utterance(
+            text, self._id_map, lexicon=self._lexicon
+        )
+        lid = int(self._language_id_for_utterance(text))
+        feed = {
+            "input": np.array([phoneme_ids], dtype=np.int64),
+            "input_lengths": np.array([len(phoneme_ids)], dtype=np.int64),
+            "scales": np.array(
+                [self._noise_scale, length_scale, self._noise_scale_w],
+                dtype=np.float32,
+            ),
+        }
+        if "lid" in self._input_names:
+            feed["lid"] = np.array([lid], dtype=np.int64)
+        if "sid" in self._input_names:
+            feed["sid"] = np.array([self._sid], dtype=np.int64)
+        if "prosody_features" in self._input_names:
+            rows = []
+            for pf in prosody_dicts:
+                if pf is None:
+                    rows.append([0, 0, 0])
+                else:
+                    rows.append(
+                        [
+                            int(pf.get("a1", 0)),
+                            int(pf.get("a2", 0)),
+                            int(pf.get("a3", 0)),
+                        ]
+                    )
+            feed["prosody_features"] = np.expand_dims(
+                np.array(rows, dtype=np.int64), 0
+            )
+        if "speaker_embedding" in self._input_names:
+            emb_dim = 256
+            for inp in self._sess.get_inputs():
+                if inp.name == "speaker_embedding" and len(inp.shape) >= 2:
+                    if isinstance(inp.shape[1], int):
+                        emb_dim = inp.shape[1]
+            feed["speaker_embedding"] = np.zeros((1, emb_dim), dtype=np.float32)
+            feed["speaker_embedding_mask"] = np.array([[0]], dtype=np.int64)
+
+        audio = np.asarray(self._sess.run(None, feed)[0]).squeeze().astype(np.float32)
+        samples = _resample_to_16k(audio, self._model_sr)
+        return _float_samples_to_pcm16(samples)
 
 
 def _build_tts_adapter(cfg: dict) -> TTSAdapter:
@@ -527,7 +682,18 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
     speaker_id = int(cfg.get("speaker_id", 0))
     speed = float(cfg.get("speed", 1.0))
     backend = cfg.get("backend", "vits")
-    if backend == "kokoro":
+    if backend == "piper":
+        adapter = PiperDualG2PTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_piper_b2"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+            noise_scale=float(cfg.get("noise_scale", 0.667)),
+            noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
+        )
+    elif backend == "kokoro":
         adapter = SherpaOnnxKokoroTTSAdapter(
             model_dir,
             speaker_id,

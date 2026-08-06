@@ -80,7 +80,8 @@ RUN cd /ros_ws && \
 # ── Python deps ────────────────────────────────────────────────────
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
     pyyaml requests websockets webrtcvad websocket-client dashscope psutil wetext \
-    jieba pypinyin cn2an inflect fast_langdetect split_lang && \
+    jieba pypinyin cn2an inflect fast_langdetect split_lang \
+    g2p-en nltk onnxruntime && \
     pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
 
 # ── HTMSG deps (KISS-ICP + future semantic) ──────────────────────
@@ -140,6 +141,15 @@ RUN if [ "${SHERPA_ONNX_ENABLE_GPU}" = "ON" ]; then \
     else \
         pip3 install --no-cache-dir -i ${PYPI_MIRROR} sherpa-onnx; \
     fi
+
+# Piper dual-G2P needs g2p_en + CMUdict at runtime (no proxy required on build host).
+ENV NLTK_DATA=/usr/share/nltk_data
+RUN mkdir -p /usr/share/nltk_data && \
+    python3 -c "import nltk; \
+nltk.download('cmudict', download_dir='/usr/share/nltk_data'); \
+nltk.download('averaged_perceptron_tagger', download_dir='/usr/share/nltk_data'); \
+nltk.download('averaged_perceptron_tagger_eng', download_dir='/usr/share/nltk_data')" || \
+    echo "WARN: nltk download failed at build time; ensure NLTK_DATA at runtime"
 
 # ── Application code ───────────────────────────────────────────────
 WORKDIR /work

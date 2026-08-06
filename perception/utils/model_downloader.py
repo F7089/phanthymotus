@@ -57,6 +57,11 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-8k.tar.bz2",
         "check_file": "model.onnx",
     },
+    # Piper dual-G2P B2 (model.onnx + model.onnx.json + frontend + lexicon + vendor/g2p)
+    "tts_piper_b2": {
+        "url": f"{JUICEFS_BASE}/piper-longanlingxin-b2.tar.bz2",
+        "check_file": "model.onnx",
+    },
     "tts_melo": {
         "url": f"{JUICEFS_BASE}/vits-melo-tts-zh_en.tar.bz2",
         "check_file": "model.onnx",
