@@ -563,20 +563,22 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             raise FileNotFoundError(f"missing {frontend_py}")
 
         # Prefer package-local G2P + frontend (self-contained tar).
+        # Must use a normal import (or register in sys.modules before
+        # exec_module): dual_zh_en_frontend defines @dataclass types, and
+        # dataclasses looks up cls.__module__ in sys.modules — missing entry
+        # → AttributeError: 'NoneType' object has no attribute '__dict__'.
         if os.path.isdir(vendor_g2p):
             sys.path.insert(0, vendor_g2p)
-        sys.path.insert(0, model_dir)
+        if model_dir not in sys.path:
+            sys.path.insert(0, model_dir)
 
         import json
-        import importlib.util
+        import importlib
 
-        spec = importlib.util.spec_from_file_location(
-            "dual_zh_en_frontend", frontend_py
-        )
-        if spec is None or spec.loader is None:
-            raise ImportError(f"cannot load dual_zh_en_frontend from {frontend_py}")
-        frontend = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(frontend)
+        # Drop a stale module so config-rebuild / multi-instance reloads pick
+        # up the package under model_dir (not a previous path).
+        sys.modules.pop("dual_zh_en_frontend", None)
+        frontend = importlib.import_module("dual_zh_en_frontend")
 
         self._encode_utterance = frontend.encode_utterance
         self._language_id_for_utterance = frontend.language_id_for_utterance
@@ -1176,14 +1178,29 @@ class TTSPlugin:
             return {"status": "queued", "text": text}
 
         elif action == "config":
-            cfg = {k: v for k, v in args.items() if k not in ('action', 'instance_id') and v}
-            # Update config and rebuild adapter
+            cfg = {
+                k: v for k, v in args.items()
+                if k not in ('action', 'instance_id') and v is not None and v != ''
+            }
             if 'speaker_id' in cfg:
                 self._cfg['speaker_id'] = int(cfg['speaker_id'])
             if 'speed' in cfg:
                 self._cfg['speed'] = float(cfg['speed'])
-            self._adapter = _build_tts_adapter(self._cfg)
-            # Stop all nodes (they'll use new adapter on next start)
+            # Prefer in-place update (eval only tweaks sid/speed). Full rebuild
+            # only when adapter missing (e.g. init load failed).
+            if self._adapter is not None:
+                if hasattr(self._adapter, '_sid'):
+                    self._adapter._sid = int(self._cfg.get('speaker_id', 0))
+                if hasattr(self._adapter, '_speed'):
+                    self._adapter._speed = float(self._cfg.get('speed', 1.0))
+            else:
+                try:
+                    self._adapter = _build_tts_adapter(self._cfg)
+                    self._load_error = None
+                except Exception as e:
+                    self._load_error = str(e)
+                    log.error(f"[tts] config rebuild failed: {e}", exc_info=True)
+                    raise
             for key in list(self._nodes.keys()):
                 self._nodes[key].stop()
                 self._executor.remove_node(self._nodes[key])
