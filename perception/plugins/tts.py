@@ -79,12 +79,12 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
-            # workspace=1 for conv speed; soft 512MB CUDA arena cap to cut RSS.
-            # Re-bench RTF after changing this — too low can slow or fail runs.
+            # workspace=0: smaller cuDNN workspace (less RAM); may raise RTF.
+            # Keep gpu_mem_limit=512 as a soft CUDA arena cap for this A/B.
             cuda_opts = {
                 "device_id": 0,
                 "gpu_mem_limit": 512 * 1024 * 1024,
-                "cudnn_conv_use_max_workspace": "1",
+                "cudnn_conv_use_max_workspace": "0",
                 "cudnn_conv_algo_search": "HEURISTIC",
             }
             return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
