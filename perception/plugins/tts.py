@@ -79,11 +79,12 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
-            # workspace=0: smaller cuDNN workspace (less RAM); may raise RTF.
-            # Keep gpu_mem_limit=512 as a soft CUDA arena cap for this A/B.
+            # A/B: isolate arena_extend + mem_pattern (workspace/limit already
+            # shown ineffective alone). Same workspace=0 + limit=512 as last run.
             cuda_opts = {
                 "device_id": 0,
                 "gpu_mem_limit": 512 * 1024 * 1024,
+                "arena_extend_strategy": "kSameAsRequested",
                 "cudnn_conv_use_max_workspace": "0",
                 "cudnn_conv_algo_search": "HEURISTIC",
             }
@@ -651,8 +652,8 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
 
         ort, providers = _piper_ort_providers(hw_provider)
         so = ort.SessionOptions()
-        # Mild RAM save; avoid CUDA workspace/mem clamps that hurt RTF.
         so.enable_cpu_mem_arena = False
+        so.enable_mem_pattern = False  # A/B: was in yesterday's ~900MB pack
         so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
@@ -666,7 +667,10 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             if require:
                 raise RuntimeError(msg)
             log.warning(msg)
-        log.info(f"[tts] piper ORT providers={active} (RTF-oriented CUDA opts)")
+        log.info(
+            f"[tts] piper ORT providers={active} "
+            f"(A/B: kSameAsRequested + mem_pattern=off)"
+        )
         self._input_names = {i.name for i in self._sess.get_inputs()}
         self._sid = int(speaker_id)
         self._speed = float(speed) if speed else 1.0
