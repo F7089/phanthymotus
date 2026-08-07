@@ -65,48 +65,41 @@ def _piper_run(sess, ort_module, feeds):
     except Exception:
         return sess.run(None, feeds)
 
+
 def _piper_ort_providers(hw_provider: str) -> tuple:
     """Return (onnxruntime module, provider list) for Piper InferenceSession.
 
-    Jetson image installs onnxruntime-gpu from Jetson AI Lab (JP6/cu126), which
-    exposes CUDAExecutionProvider natively. Do not ctypes-preload sherpa's ORT
-    libs into this process — that segfaults (exit 139).
+    Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
+    Prefer RTF: cuDNN max workspace on; no gpu_mem_limit / workspace=0 clamps.
     """
     import os
 
     import onnxruntime as ort
 
-    providers = ["CPUExecutionProvider"]
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
-            providers = [
-                (
-                    "CUDAExecutionProvider",
-                    {
-                        "device_id": 0,
-                        "arena_extend_strategy": "kSameAsRequested",
-                        "gpu_mem_limit": 384 * 1024 * 1024,
-                        "cudnn_conv_algo_search": "HEURISTIC",
-                        "cudnn_conv_use_max_workspace": "0",
-                    },
-                ),
-                "CPUExecutionProvider",
-            ]
-        else:
-            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
-            msg = (
-                "[tts] piper: CUDA requested but CUDAExecutionProvider missing; "
-                f"available={available}"
+            # workspace=1: faster conv algos (Piper/VITS is conv-heavy).
+            # Do not set gpu_mem_limit or workspace=0 — those trade RTF for RAM.
+            cuda_opts = {
+                "device_id": 0,
+                "cudnn_conv_use_max_workspace": "1",
+                "cudnn_conv_algo_search": "HEURISTIC",
+            }
+            return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
+        require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+        msg = (
+            "[tts] piper: CUDA requested but CUDAExecutionProvider missing; "
+            f"available={available}"
+        )
+        if require:
+            raise RuntimeError(
+                msg
+                + " (TTS_REQUIRE_CUDA=1). Rebuild with JuiceFS onnxruntime-gpu "
+                "(see Dockerfile.jetson)."
             )
-            if require:
-                raise RuntimeError(
-                    msg
-                    + " (TTS_REQUIRE_CUDA=1). Rebuild with Jetson AI Lab "
-                    "onnxruntime-gpu (see Dockerfile.jetson)."
-                )
-            log.warning(msg + "; using CPU")
-    return ort, providers
+        log.warning(msg + "; using CPU")
+    return ort, ["CPUExecutionProvider"]
 
 
 _maybe_set_cpu_affinity()
@@ -657,14 +650,11 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
 
         ort, providers = _piper_ort_providers(hw_provider)
         so = ort.SessionOptions()
+        # Mild RAM save; avoid CUDA workspace/mem clamps that hurt RTF.
         so.enable_cpu_mem_arena = False
-        so.enable_mem_pattern = False
-        so.intra_op_num_threads = 1
+        so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        so.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        so.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        so.intra_op_num_threads = max(1, int(num_threads))
         self._sess = ort.InferenceSession(
             model_path, sess_options=so, providers=providers
         )
@@ -675,6 +665,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             if require:
                 raise RuntimeError(msg)
             log.warning(msg)
+        log.info(f"[tts] piper ORT providers={active} (RTF-oriented CUDA opts)")
         self._input_names = {i.name for i in self._sess.get_inputs()}
         self._sid = int(speaker_id)
         self._speed = float(speed) if speed else 1.0
@@ -742,7 +733,9 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             feed["speaker_embedding"] = np.zeros((1, emb_dim), dtype=np.float32)
             feed["speaker_embedding_mask"] = np.array([[0]], dtype=np.int64)
 
-        audio = np.asarray(_piper_run(self._sess, __import__('onnxruntime'), feed)[0]).squeeze().astype(np.float32)
+        audio = np.asarray(
+            _piper_run(self._sess, __import__("onnxruntime"), feed)[0]
+        ).squeeze().astype(np.float32)
         samples = _resample_to_16k(audio, self._model_sr)
         return _float_samples_to_pcm16(samples)
 
