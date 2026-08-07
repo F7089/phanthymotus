@@ -32,7 +32,10 @@ plugins:
     max_segment_chars: 60  # RTF-friendly; shorter segments raise RTF (more ORT runs)
     warmup: true
     warmup_async: false
-    warmup_text: "你好，欢迎使用语音合成服务，这是一段预热测试文本。"
+    # Pure ZH + ZH/EN mix so English G2P / CUDA path is hot before eval.
+    warmup_texts:
+      - "你好，欢迎使用语音合成服务，这是一段预热测试文本。"
+      - "你好，我有一个iPhone和一个KTV，还支持 WiFi 和 Apple Pay。"
     realtime_pacing: false
 
   htmsg:

@@ -1032,15 +1032,26 @@ def _warmup_tts_adapter(adapter: TTSAdapter, text: str = "。") -> None:
 
 
 def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
-    """Warm up ORT/CUDA before the first speak request."""
+    """Warm up ORT/CUDA (+ ZH and ZH/EN G2P paths) before first speak."""
     if not plugin_cfg.get("warmup", True):
         return
-    text = plugin_cfg.get(
-        "warmup_text",
-        "你好，欢迎使用语音合成服务，这是一段预热测试文本。",
-    )
+    texts = plugin_cfg.get("warmup_texts")
+    if texts is None:
+        single = plugin_cfg.get(
+            "warmup_text",
+            "你好，欢迎使用语音合成服务，这是一段预热测试文本。",
+        )
+        texts = [single] if isinstance(single, str) else list(single or [])
+    elif isinstance(texts, str):
+        texts = [texts]
+    else:
+        texts = [t for t in texts if t]
+    if not texts:
+        texts = ["你好，欢迎使用语音合成服务，这是一段预热测试文本。"]
     try:
-        _warmup_tts_adapter(adapter, text)
+        for i, text in enumerate(texts):
+            log.info(f"[tts] warmup [{i + 1}/{len(texts)}]")
+            _warmup_tts_adapter(adapter, text)
     except Exception as e:
         log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
 
