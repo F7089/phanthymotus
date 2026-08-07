@@ -27,7 +27,7 @@ plugins:
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0
-    speed: 0.85
+    speed: 0.9
     text_normalize: true
     max_segment_chars: 60  # RTF-friendly; shorter segments raise RTF (more ORT runs)
     warmup: true
