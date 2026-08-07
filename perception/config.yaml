@@ -32,9 +32,10 @@ plugins:
     max_segment_chars: 60  # RTF-friendly; shorter segments raise RTF (more ORT runs)
     warmup: true
     warmup_async: false
-    # A/B: single ZH warmup only (match yesterday ~900MB conditions).
-    # Restore warmup_texts ZH+EN mix after this memory experiment.
-    warmup_text: "你好，欢迎使用语音合成服务，这是一段预热测试文本。"
+    # Short ZH + minimal EN token: heat dual-G2P without long-seq workspace.
+    warmup_texts:
+      - "你好。"
+      - "打开 YouTube。"
     realtime_pacing: false
 
   htmsg:
