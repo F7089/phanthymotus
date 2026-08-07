@@ -32,10 +32,10 @@ plugins:
     max_segment_chars: 60  # RTF-friendly; shorter segments raise RTF (more ORT runs)
     warmup: true
     warmup_async: false
-    # Short ZH + minimal EN token: heat dual-G2P without long-seq workspace.
+    # Minimal ZH + EN: heat dual-G2P; keep short to limit sticky ORT workspace.
     warmup_texts:
-      - "你好。"
-      - "打开 YouTube。"
+      - "好。"
+      - "YouTube。"
     realtime_pacing: false
 
   htmsg:

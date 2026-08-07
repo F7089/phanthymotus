@@ -70,7 +70,7 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     """Return (onnxruntime module, provider list) for Piper InferenceSession.
 
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
-    Prefer RTF: cuDNN max workspace on; no gpu_mem_limit / workspace=0 clamps.
+    Prefer RTF: cuDNN max workspace on; soft gpu_mem_limit=512MiB.
     """
     import os
 
@@ -79,12 +79,11 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
-            # Repro yesterday ~900MB docker pack: tight arena + no max workspace.
+            # RTF-oriented: workspace=1 + limit=512; sticky RAM via short warmup.
             cuda_opts = {
                 "device_id": 0,
-                "gpu_mem_limit": 384 * 1024 * 1024,
-                "arena_extend_strategy": "kSameAsRequested",
-                "cudnn_conv_use_max_workspace": "0",
+                "gpu_mem_limit": 512 * 1024 * 1024,
+                "cudnn_conv_use_max_workspace": "1",
                 "cudnn_conv_algo_search": "HEURISTIC",
             }
             return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
@@ -651,15 +650,11 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
 
         ort, providers = _piper_ort_providers(hw_provider)
         so = ort.SessionOptions()
+        # Mild RAM save; avoid arena/spinning clamps that hurt RTF.
         so.enable_cpu_mem_arena = False
-        so.enable_mem_pattern = False
-        so.intra_op_num_threads = 1
+        so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        so.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        so.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        # Keep config num_threads for intra after spinning off (matches eeb20c6).
-        so.intra_op_num_threads = max(1, int(num_threads))
         self._sess = ort.InferenceSession(
             model_path, sess_options=so, providers=providers
         )
@@ -672,7 +667,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             log.warning(msg)
         log.info(
             f"[tts] piper ORT providers={active} "
-            f"(A/B: limit=384 + arena + mem_pattern=off + no-spin)"
+            f"(RTF: workspace=1, limit=512)"
         )
         self._input_names = {i.name for i in self._sess.get_inputs()}
         self._sid = int(speaker_id)
