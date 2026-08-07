@@ -80,9 +80,11 @@ RUN cd /ros_ws && \
 # ── Python deps ────────────────────────────────────────────────────
 # NOTE: do NOT pip-install PyPI onnxruntime here. aarch64 wheel is CPU-only.
 # Piper CUDA EP comes from Jetson AI Lab onnxruntime-gpu (installed after sherpa).
+# Note: do NOT install fast_langdetect/split_lang — lid.176.bin (~125MB) is
+# unused by Piper dual-G2P and only adds cold-start download + RSS on Jetson.
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
     pyyaml requests websockets webrtcvad websocket-client dashscope psutil wetext \
-    jieba pypinyin cn2an inflect fast_langdetect split_lang \
+    jieba pypinyin cn2an inflect \
     g2p-en nltk && \
     pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
 

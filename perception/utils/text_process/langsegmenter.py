@@ -17,27 +17,17 @@ _lang_split_err = None
 
 
 def _get_lang_splitter_cls():
-    """Lazy import: fast_langdetect may download on first use; fail soft offline."""
-    global _LangSplitter, _lang_split_err
-    if _LangSplitter is not None:
-        return _LangSplitter
-    if _lang_split_err is not None:
-        return None
-    try:
-        import fast_langdetect
-        from split_lang import LangSplitter
+    """LangSplitter/fast_langdetect disabled for Piper TTS.
 
-        cache_dir = Path(__file__).parent / "fast_langdetect"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        fast_langdetect.infer._default_detector = fast_langdetect.infer.LangDetector(
-            fast_langdetect.infer.LangDetectConfig(cache_dir=cache_dir)
-        )
-        _LangSplitter = LangSplitter
-        return _LangSplitter
-    except Exception as e:
-        _lang_split_err = e
-        log.warning("[text_process] LangSplitter unavailable: %s", e)
-        return None
+    FastText lid.176.bin (~125MB) is not needed: dual-G2P handles ZH/EN,
+    and getTexts() already falls back to single-lang segmentation.
+    Skipping avoids cold-start download and sticky RSS on Jetson.
+    """
+    global _lang_split_err
+    if _lang_split_err is None:
+        _lang_split_err = RuntimeError("LangSplitter disabled (no lid.176.bin)")
+        log.info("[text_process] LangSplitter disabled; using single-lang fallback")
+    return None
 
 
 def full_en(text):
