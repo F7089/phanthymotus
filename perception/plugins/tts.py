@@ -104,6 +104,46 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
 
 _maybe_set_cpu_affinity()
 
+# US English letter NAMES (not article/pronoun). Merged into product lexicon so
+# ALLCAPS split (AI→A I) does not hit cmudict word readings (a→/ə/, I→pronoun).
+_LETTER_NAME_ARPABET: dict[str, list[str]] = {
+    "a": ["EY1"],
+    "b": ["B", "IY1"],
+    "c": ["S", "IY1"],
+    "d": ["D", "IY1"],
+    "e": ["IY1"],
+    "f": ["EH1", "F"],
+    "g": ["JH", "IY1"],
+    "h": ["EY1", "CH"],
+    "i": ["AY1"],
+    "j": ["JH", "EY1"],
+    "k": ["K", "EY1"],
+    "l": ["EH1", "L"],
+    "m": ["EH1", "M"],
+    "n": ["EH1", "N"],
+    "o": ["OW1"],
+    "p": ["P", "IY1"],
+    "q": ["K", "Y", "UW1"],
+    "r": ["AA1", "R"],
+    "s": ["EH1", "S"],
+    "t": ["T", "IY1"],
+    "u": ["Y", "UW1"],
+    "v": ["V", "IY1"],
+    "w": ["D", "AH1", "B", "AH0", "L", "Y", "UW0"],
+    "x": ["EH1", "K", "S"],
+    "y": ["W", "AY1"],
+    "z": ["Z", "IY1"],
+}
+
+
+def _merge_letter_name_lexicon(lexicon: dict) -> dict:
+    """Ensure a–z letter-name ARPAbet entries win over cmudict word readings."""
+    out = dict(lexicon or {})
+    for k, v in _LETTER_NAME_ARPABET.items():
+        out[k] = list(v)
+    return out
+
+
 _STRONG_SENTENCE_END = frozenset("。！？!?；;")
 _WEAK_SENTENCE_END = frozenset("，,、：:")
 _CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
