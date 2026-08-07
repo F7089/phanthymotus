@@ -685,7 +685,7 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
         }
         # load_arpabet_lexicon expects pathlib.Path (uses .is_file/.read_text).
         lex_arg = Path(lexicon_path) if os.path.isfile(lexicon_path) else None
-        self._lexicon = self._load_arpabet_lexicon(lex_arg)
+        self._lexicon = _merge_letter_name_lexicon(self._load_arpabet_lexicon(lex_arg))
         self._model_sr = int((cfg.get("audio") or {}).get("sample_rate") or 22050)
 
         ort, providers = _piper_ort_providers(hw_provider)
