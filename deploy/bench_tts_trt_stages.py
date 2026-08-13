@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
 """Compare ORT CUDA vs TensorRT EP RSS for Melo FP32 (inside Jetson container).
 
-Fresh process stages per backend:
-  before_session / after_session / after_run1 / after_run2
+Each backend runs in a **fresh subprocess** so RSS baselines stay clean.
 
 Host:
+  # 1) shape-infer (required for TRT EP on this Melo graph)
+  docker cp deploy/shape_infer_melo_onnx.py phanthymotus-tts-melo:/tmp/
+  docker exec -u 0 phanthymotus-tts-melo bash -lc \\
+    'python3 -c "import onnx" 2>/dev/null || pip3 install -q onnx; \\
+     python3 /tmp/shape_infer_melo_onnx.py \\
+       --input /models/vits-melo-longanlingxin-openepd-nobert-44100-fp32/model.onnx \\
+       --output /tmp/melo_fp32_shaped.onnx'
+
+  # 2) stage bench
   docker cp deploy/bench_tts_trt_stages.py phanthymotus-tts-melo:/tmp/
-  docker exec -u 0 phanthymotus-tts-melo python3 /tmp/bench_tts_trt_stages.py \\
+  docker exec -u 0 -e MELO_ONNX_TRT=/tmp/melo_fp32_shaped.onnx \\
+    phanthymotus-tts-melo python3 /tmp/bench_tts_trt_stages.py \\
     | tee ~/fanyi/wav_out/trt_stages.txt
 """
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -63,21 +73,42 @@ def build_providers(backend: str):
     raise ValueError(backend)
 
 
-def main() -> None:
-    g2p = Path("/models/melo-openepd-g2p-assets")
-    model = Path(
+def _default_model(backend: str) -> Path:
+    raw = Path(
         "/models/vits-melo-longanlingxin-openepd-nobert-44100-fp32/model.onnx"
     )
+    if backend == "trt":
+        shaped = Path(
+            os.environ.get("MELO_ONNX_TRT", "/tmp/melo_fp32_shaped.onnx")
+        )
+        if shaped.is_file():
+            return shaped
+        # fall back; will likely fail with the known ConstantOfShape error
+        return Path(os.environ.get("MELO_ONNX", str(raw)))
+    return Path(os.environ.get("MELO_ONNX", str(raw)))
+
+
+def run_one_backend(backend: str) -> dict:
+    g2p = Path("/models/melo-openepd-g2p-assets")
+    model = _default_model(backend)
     text = os.environ.get(
         "BENCH_TEXT", "你好，这是榜单模拟测试。今天天气怎么样？"
     )
-    backends = ["cuda", "trt"]
     if not model.is_file():
-        raise SystemExit(f"missing {model}")
+        return {
+            "backend": backend,
+            "error": f"missing model {model}"
+            + (
+                " (run shape_infer_melo_onnx.py first for TRT)"
+                if backend == "trt"
+                else ""
+            ),
+        }
 
     os.environ["MELO_OPENEPD_DICT"] = str(g2p / "openepd_eng_dict.pickle")
     os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
-    sys.path.insert(0, str(g2p / "vendor"))
+    if str(g2p / "vendor") not in sys.path:
+        sys.path.insert(0, str(g2p / "vendor"))
 
     import onnxruntime as ort
     from melo_g2p.encode import encode_phones_tones
@@ -104,78 +135,110 @@ def main() -> None:
     }
     print(f"g2p_ready rss={rss_mb():.1f} phones={len(phone_ids)}")
 
-    summary = []
-    for backend in backends:
-        import gc
+    ort_mod, providers = build_providers(backend)
+    before = rss_mb()
+    print(f"\n== backend={backend} ==")
+    print(f"  providers_cfg={providers}")
+    print(f"  before_session rss={before:.1f}")
 
-        gc.collect()
-        ort_mod, providers = build_providers(backend)
-        before = rss_mb()
-        print(f"\n== backend={backend} ==")
-        print(f"  providers_cfg={providers}")
-        print(f"  before_session rss={before:.1f}")
+    so = ort_mod.SessionOptions()
+    so.enable_cpu_mem_arena = False
+    so.intra_op_num_threads = 2
+    so.inter_op_num_threads = 1
+    so.execution_mode = ort_mod.ExecutionMode.ORT_SEQUENTIAL
+    if os.environ.get("TTS_ORT_VERBOSE", "0") == "1":
+        so.log_severity_level = 0
+        so.log_verbosity_level = 1
 
-        so = ort_mod.SessionOptions()
-        so.enable_cpu_mem_arena = False
-        so.intra_op_num_threads = 2
-        so.inter_op_num_threads = 1
-        so.execution_mode = ort_mod.ExecutionMode.ORT_SEQUENTIAL
-        # Help see EP assignment if needed
-        if os.environ.get("TTS_ORT_VERBOSE", "0") == "1":
-            so.log_severity_level = 0
-            so.log_verbosity_level = 1
-
-        t0 = time.perf_counter()
-        try:
-            sess = ort_mod.InferenceSession(
-                str(model), sess_options=so, providers=providers
-            )
-        except Exception as e:
-            print(f"  ERROR creating session: {e}")
-            summary.append({"backend": backend, "error": str(e)})
-            continue
-        load_s = time.perf_counter() - t0
-        after = rss_mb()
-        print(
-            f"  after_session  rss={after:.1f} (+{after-before:.1f}) "
-            f"load={load_s:.2f}s active={sess.get_providers()}"
+    t0 = time.perf_counter()
+    try:
+        sess = ort_mod.InferenceSession(
+            str(model), sess_options=so, providers=providers
         )
+    except Exception as e:
+        print(f"  ERROR creating session: {e}")
+        return {"backend": backend, "error": str(e), "model": str(model)}
 
-        for i in range(2):
-            t1 = time.perf_counter()
-            outs = sess.run(None, feed)
-            dt = time.perf_counter() - t1
-            audio = np.asarray(outs[0]).squeeze()
-            dur = float(audio.size) / 44100.0
-            now = rss_mb()
-            print(
-                f"  after_run{i+1}    rss={now:.1f} (+{now-before:.1f}) "
-                f"ort={dt:.3f}s rtf={dt/dur:.3f}"
-            )
-            summary.append(
-                {
-                    "backend": backend,
-                    "stage": f"run{i+1}",
-                    "rss_mib": round(now, 1),
-                    "delta": round(now - before, 1),
-                    "ort_s": round(dt, 3),
-                    "rtf": round(dt / dur, 3),
-                    "active": sess.get_providers(),
-                }
-            )
+    load_s = time.perf_counter() - t0
+    after = rss_mb()
+    print(
+        f"  after_session  rss={after:.1f} (+{after-before:.1f}) "
+        f"load={load_s:.2f}s active={sess.get_providers()}"
+    )
 
-        summary.append(
+    rows = [
+        {
+            "backend": backend,
+            "stage": "session",
+            "rss_mib": round(after, 1),
+            "delta": round(after - before, 1),
+            "load_s": round(load_s, 2),
+            "active": sess.get_providers(),
+            "model": str(model),
+        }
+    ]
+    for i in range(2):
+        t1 = time.perf_counter()
+        outs = sess.run(None, feed)
+        dt = time.perf_counter() - t1
+        audio = np.asarray(outs[0]).squeeze()
+        dur = float(audio.size) / 44100.0
+        now = rss_mb()
+        print(
+            f"  after_run{i+1}    rss={now:.1f} (+{now-before:.1f}) "
+            f"ort={dt:.3f}s rtf={dt/dur:.3f}"
+        )
+        rows.append(
             {
                 "backend": backend,
-                "stage": "session",
-                "rss_mib": round(after, 1),
-                "delta": round(after - before, 1),
-                "load_s": round(load_s, 2),
+                "stage": f"run{i+1}",
+                "rss_mib": round(now, 1),
+                "delta": round(now - before, 1),
+                "ort_s": round(dt, 3),
+                "rtf": round(dt / dur, 3),
                 "active": sess.get_providers(),
             }
         )
-        del sess, outs
-        gc.collect()
+    return {"backend": backend, "ok": True, "rows": rows}
+
+
+def main() -> None:
+    if len(sys.argv) >= 3 and sys.argv[1] == "--worker":
+        result = run_one_backend(sys.argv[2])
+        Path("/tmp/trt_worker_result.json").write_text(
+            json.dumps(result, ensure_ascii=False) + "\n"
+        )
+        if "error" in result and not result.get("ok"):
+            sys.exit(2)
+        return
+
+    backends = os.environ.get("BENCH_BACKENDS", "cuda,trt").split(",")
+    summary = []
+    for backend in [b.strip() for b in backends if b.strip()]:
+        print(f"\n######## spawn worker backend={backend} ########")
+        env = os.environ.copy()
+        # Force unbuffered child logs
+        env["PYTHONUNBUFFERED"] = "1"
+        p = subprocess.run(
+            [sys.executable, __file__, "--worker", backend],
+            env=env,
+            check=False,
+        )
+        result_path = Path("/tmp/trt_worker_result.json")
+        if result_path.is_file():
+            result = json.loads(result_path.read_text())
+            if result.get("rows"):
+                summary.extend(result["rows"])
+            else:
+                summary.append(result)
+            print(f"worker_exit={p.returncode} backend={backend}")
+        else:
+            summary.append(
+                {
+                    "backend": backend,
+                    "error": f"no worker result, exit={p.returncode}",
+                }
+            )
 
     out = Path("/tmp/trt_stages.json")
     out.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
