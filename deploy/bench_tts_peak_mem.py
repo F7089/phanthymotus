@@ -33,7 +33,9 @@ from pathlib import Path
 
 
 DEFAULT_OUT = Path.home() / "fanyi" / "wav_out"
-DEFAULT_TEXT = "你好，这是榜单模拟测试。今天天气怎么样？"
+DEFAULT_TEXT = "请打开 WiFi 后继续下载更新。"
+WARMUP_ZH = "你好，这是测试。"
+WARMUP_EN = "hello, this is a test."
 
 
 @dataclass
@@ -407,9 +409,12 @@ def main() -> None:
             wait_mcp(url, timeout_s=60)
             cgroup_after_ready = cgroup_memory_bytes(args.container)
 
-        for i in range(max(0, args.warmup)):
-            print(f"[warmup {i+1}/{args.warmup}]")
-            synthesize(url, args.text)
+        # Always short bilingual warmup; --warmup repeats the pair if >1.
+        for i in range(max(1, args.warmup)):
+            print(f"[warmup {i}/{max(1, args.warmup)}] zh={WARMUP_ZH!r}")
+            synthesize(url, WARMUP_ZH)
+            print(f"[warmup {i}/{max(1, args.warmup)}] en={WARMUP_EN!r}")
+            synthesize(url, WARMUP_EN)
 
         # Reset peak if kernel supports it (best-effort; may need root)
         try:

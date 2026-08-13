@@ -47,8 +47,10 @@ def run_case(case: str) -> dict:
         "/models/vits-melo-longanlingxin-openepd-nobert-44100-fp32"
     )
     ext_dir = Path(os.environ.get("MELO_ORT_DIR", "/tmp/melo_fp32_ort"))
+    warmup_zh = os.environ.get("BENCH_WARMUP_ZH", "你好，这是测试。")
+    warmup_en = os.environ.get("BENCH_WARMUP_EN", "hello, this is a test.")
     bench_text = os.environ.get(
-        "BENCH_TEXT", "你好，这是榜单模拟测试。今天天气怎么样？"
+        "BENCH_TEXT", "请打开 WiFi 后继续下载更新。"
     )
 
     import onnxruntime as ort
@@ -83,21 +85,26 @@ def run_case(case: str) -> dict:
 
     with open(g2p / "config.json", encoding="utf-8") as f:
         meta = json.load(f)
-    phone_ids, tone_ids = encode_phones_tones(
-        bench_text,
-        list(meta["symbols"]),
-        add_blank=bool(meta.get("add_blank", True)),
-        language=str(meta.get("language") or "ZH_MIX_EN"),
-    )
-    feed = {
-        "x": np.array([phone_ids], dtype=np.int64),
-        "x_lengths": np.array([len(phone_ids)], dtype=np.int64),
-        "tones": np.array([tone_ids], dtype=np.int64),
-        "sid": np.array([0], dtype=np.int64),
-        "noise_scale": np.array([0.6], dtype=np.float32),
-        "length_scale": np.array([1.0 / 0.9], dtype=np.float32),
-        "noise_scale_w": np.array([0.8], dtype=np.float32),
-    }
+    symbols = list(meta["symbols"])
+    add_blank = bool(meta.get("add_blank", True))
+    language = str(meta.get("language") or "ZH_MIX_EN")
+
+    def _feed_for(sentence: str) -> dict:
+        phone_ids, tone_ids = encode_phones_tones(
+            sentence, symbols, add_blank=add_blank, language=language
+        )
+        return {
+            "x": np.array([phone_ids], dtype=np.int64),
+            "x_lengths": np.array([len(phone_ids)], dtype=np.int64),
+            "tones": np.array([tone_ids], dtype=np.int64),
+            "sid": np.array([0], dtype=np.int64),
+            "noise_scale": np.array([0.6], dtype=np.float32),
+            "length_scale": np.array([1.0 / 0.9], dtype=np.float32),
+            "noise_scale_w": np.array([0.8], dtype=np.float32),
+        }
+
+    # Encode measure text once for host_base RSS (before session).
+    feed = _feed_for(bench_text)
     stages["after_g2p_ready"] = round(rss_mb(), 1)
     print(
         f"  after_g2p_ready          rss={stages['after_g2p_ready']}  "
@@ -145,6 +152,18 @@ def run_case(case: str) -> dict:
         f"(+{stages['session_delta']} vs g2p) load={load_s:.2f}s "
         f"providers={sess.get_providers()}"
     )
+
+    # Short bilingual warmup (not timed as steady-state).
+    for label, sentence in (("zh", warmup_zh), ("en", warmup_en)):
+        t1 = time.perf_counter()
+        outs = sess.run(None, _feed_for(sentence))
+        dt = time.perf_counter() - t1
+        audio = np.asarray(outs[0]).squeeze()
+        dur = float(audio.size) / 44100.0
+        print(
+            f"  warmup_{label}              rss={rss_mb():.1f} "
+            f"ort={dt:.3f}s rtf={dt / max(dur, 1e-6):.3f} text={sentence!r}"
+        )
 
     for i in range(2):
         t1 = time.perf_counter()
