@@ -901,7 +901,17 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         ensure_model(model_name, model_dir)
         mem_before = _process_rss_mb()
 
+        # Prefer external-data ONNX when packed (lower host RSS; same FP32 math).
         model_path = os.path.join(model_dir, "model.onnx")
+        ext_path = os.path.join(model_dir, "model.with_external.onnx")
+        if os.path.isfile(ext_path) and os.path.isfile(
+            os.path.join(model_dir, "model.with_external.onnx.data")
+        ):
+            model_path = ext_path
+        elif os.path.isfile(model_path) and os.path.isfile(
+            model_path + ".data"
+        ):
+            pass  # model.onnx + model.onnx.data
         openepd = os.path.join(g2p_dir, "openepd_eng_dict.pickle")
         cfg_path = os.path.join(g2p_dir, "config.json")
         vendor = os.path.join(g2p_dir, "vendor")
@@ -917,6 +927,9 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             raise FileNotFoundError(g2p_root)
 
         os.environ["MELO_OPENEPD_DICT"] = openepd
+        ckpt = os.path.join(g2p_root, "text", "checkpoint20.npz")
+        if os.path.isfile(ckpt):
+            os.environ.setdefault("MELO_G2P_OOV_CKPT", ckpt)
         os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
