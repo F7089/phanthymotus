@@ -53,6 +53,29 @@ def _process_rss_mb() -> float:
     return psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
 
 
+def _maybe_malloc_trim(where: str) -> None:
+    """Return free glibc heap pages to the OS (GPT 'I'). Opt-in via TTS_MALLOC_TRIM=1."""
+    import ctypes
+    import os
+
+    if os.environ.get("TTS_MALLOC_TRIM", "0") != "1":
+        return
+    before = _process_rss_mb()
+    try:
+        ret = ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception as e:
+        log.warning("[tts] malloc_trim failed at %s: %s", where, e)
+        return
+    after = _process_rss_mb()
+    log.info(
+        "[tts] malloc_trim(%s) ret=%s rss_mb=%.1f->%.1f (delta=%.1f)",
+        where,
+        ret,
+        before,
+        after,
+        after - before,
+    )
+
 
 def _piper_run(sess, ort_module, feeds):
     """ORT session.run. Arena shrinkage is opt-in (hurts RTF on Jetson Melo)."""
@@ -890,10 +913,18 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
 
         ort, providers = _piper_ort_providers(hw_provider)
         so = ort.SessionOptions()
-        so.enable_cpu_mem_arena = False
+        # Already False in production (GPT "G"); keep env override for A/B.
+        so.enable_cpu_mem_arena = os.environ.get("TTS_ORT_CPU_ARENA", "0") == "1"
+        # Default True in ORT; set TTS_ORT_MEM_PATTERN=0 for GPT "H".
+        so.enable_mem_pattern = os.environ.get("TTS_ORT_MEM_PATTERN", "1") != "0"
         so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        log.info(
+            "[tts] melo SessionOptions: cpu_arena=%s mem_pattern=%s",
+            so.enable_cpu_mem_arena,
+            so.enable_mem_pattern,
+        )
         self._sess = ort.InferenceSession(
             model_path, sess_options=so, providers=providers
         )
@@ -914,6 +945,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             f"sr={self._model_sr}, openepd={openepd}, language={self._language}, "
             f"providers={active}, rss_mb={mem_before:.1f}->{mem_after:.1f}"
         )
+        _maybe_malloc_trim("after_melo_session_load")
 
     def _synthesize_segment(self, text: str) -> bytes:
         import os
@@ -1299,6 +1331,7 @@ def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
         for i, text in enumerate(texts):
             log.info(f"[tts] warmup [{i + 1}/{len(texts)}]")
             _warmup_tts_adapter(adapter, text)
+        _maybe_malloc_trim("after_warmup")
     except Exception as e:
         log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
 
