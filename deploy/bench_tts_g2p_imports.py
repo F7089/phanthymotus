@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Subdivide the +445MB openepd_g2p_encode spike (still no ORT session)."""
+"""Split the +445MB openepd_g2p spike (GPT A→E). No ORT session / no finetune.
+
+A  before import melo_g2p.encode
+B  after  import melo_g2p.encode   (+ new sys.modules)
+C  after  load OpenEPD pickle
+D  after  first encode
+E  after  second encode
+"""
 from __future__ import annotations
 
 import json
@@ -16,24 +23,19 @@ def rss_mb() -> float:
     return -1.0
 
 
-def step(name: str, fn, rows: list) -> None:
-    before = rss_mb()
-    t0 = time.perf_counter()
-    fn()
-    dt = time.perf_counter() - t0
-    after = rss_mb()
-    rows.append(
-        {
-            "step": name,
-            "rss_mib": round(after, 1),
-            "delta_mib": round(after - before, 1),
-            "sec": round(dt, 3),
-        }
-    )
-    print(
-        f"{name:36s}  rss={after:7.1f}  delta={after-before:+7.1f}  {dt:.3f}s",
-        flush=True,
-    )
+def mark(label: str, rows: list, extra: dict | None = None) -> float:
+    r = round(rss_mb(), 1)
+    row = {"step": label, "rss_mib": r}
+    if rows:
+        row["delta_mib"] = round(r - rows[-1]["rss_mib"], 1)
+    else:
+        row["delta_mib"] = 0.0
+    if extra:
+        row.update(extra)
+    rows.append(row)
+    d = row["delta_mib"]
+    print(f"{label:28s}  rss={r:7.1f}  delta={d:+7.1f}", flush=True)
+    return r
 
 
 def main() -> None:
@@ -41,98 +43,129 @@ def main() -> None:
     os.environ["MELO_OPENEPD_DICT"] = str(g2p / "openepd_eng_dict.pickle")
     os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
     sys.path.insert(0, str(g2p / "vendor"))
+
     rows: list = []
+    print(f"pid={os.getpid()}", flush=True)
 
-    print(f"pid={os.getpid()} start_rss={rss_mb():.1f}")
-    # Match prior host_imports baseline-ish: numpy+jieba already warm in real svc,
-    # but here start clean and only walk G2P internals.
-    step("import_numpy", lambda: __import__("numpy"), rows)
-    step("import_jieba_cut", lambda: list(__import__("jieba").cut("你好")), rows)
+    # Warm the same cheap deps as host_imports (so A ≈ ~123MB)
+    import numpy  # noqa: F401
+    import jieba
 
-    step("import_melo_g2p_pkg", lambda: __import__("melo_g2p"), rows)
+    list(jieba.cut("你好"))
+    import onnxruntime  # noqa: F401
 
-    def _cleaner():
-        from melo_g2p.text import cleaner  # noqa: F401
+    mark("A_before_melo_import", rows)
 
-    step("import_melo_g2p.text.cleaner", _cleaner, rows)
+    before_mods = set(sys.modules)
+    t0 = time.perf_counter()
+    from melo_g2p.encode import encode_phones_tones
 
-    def _chinese():
-        from melo_g2p.text import chinese  # noqa: F401
+    import_s = time.perf_counter() - t0
+    after_mods = set(sys.modules)
+    new_mods = sorted(after_mods - before_mods)
+    mark("B_after_melo_import", rows, {"import_s": round(import_s, 3), "new_modules": len(new_mods)})
 
-    step("import_melo_g2p.text.chinese", _chinese, rows)
+    # Suspicious heavy packages
+    suspects = [
+        "torch",
+        "torchaudio",
+        "transformers",
+        "librosa",
+        "numba",
+        "llvmlite",
+        "sklearn",
+        "nltk",
+        "pandas",
+        "tensorflow",
+        "pypinyin",
+        "cn2an",
+        "g2p_en",
+        "unidecode",
+        "inflect",
+        "gruut",
+    ]
+    print("\nsuspect sys.modules:")
+    for name in suspects:
+        print(f"  {name:16s} {name in sys.modules}")
 
-    def _chinese_mix():
-        from melo_g2p.text import chinese_mix  # noqa: F401
+    print(f"\nnew sys.modules ({len(new_mods)}):")
+    for x in new_mods:
+        print(f"  {x}")
 
-    step("import_melo_g2p.text.chinese_mix", _chinese_mix, rows)
+    # Load OpenEPD pickle alone (may already be loaded by english import)
+    t1 = time.perf_counter()
+    import pickle
 
-    def _english():
-        from melo_g2p.text import english  # noqa: F401
+    with open(g2p / "openepd_eng_dict.pickle", "rb") as f:
+        eng = pickle.load(f)
+    mark(
+        "C_after_openepd_pickle",
+        rows,
+        {
+            "pickle_s": round(time.perf_counter() - t1, 3),
+            "entries": len(eng) if hasattr(eng, "__len__") else None,
+        },
+    )
 
-    step("import_melo_g2p.text.english", _english, rows)
+    with open(g2p / "config.json", encoding="utf-8") as f:
+        meta = json.load(f)
+    symbols = list(meta["symbols"])
+    lang = str(meta.get("language") or "ZH_MIX_EN")
+    add_blank = bool(meta.get("add_blank", True))
 
-    def _load_openepd():
-        import pickle
+    t2 = time.perf_counter()
+    encode_phones_tones("你好 hello", symbols, add_blank=add_blank, language=lang)
+    mark("D_after_first_encode", rows, {"encode_s": round(time.perf_counter() - t2, 3)})
 
-        p = g2p / "openepd_eng_dict.pickle"
-        with open(p, "rb") as f:
-            d = pickle.load(f)
-        print(f"  openepd_entries≈{len(d) if hasattr(d, '__len__') else '?'}", flush=True)
+    t3 = time.perf_counter()
+    encode_phones_tones(
+        "今天天气怎么样？", symbols, add_blank=add_blank, language=lang
+    )
+    mark("E_after_second_encode", rows, {"encode_s": round(time.perf_counter() - t3, 3)})
 
-    step("pickle_load_openepd", _load_openepd, rows)
-
-    def _encode():
-        from melo_g2p.encode import encode_phones_tones
-
-        with open(g2p / "config.json", encoding="utf-8") as f:
-            meta = json.load(f)
-        encode_phones_tones(
-            "你好 hello",
-            list(meta["symbols"]),
-            add_blank=bool(meta.get("add_blank", True)),
-            language=str(meta.get("language") or "ZH_MIX_EN"),
-        )
-
-    step("encode_phones_tones_once", _encode, rows)
-
-    # Who is mapped?
+    # maps: torch / blas / etc
+    print("\n/proc/self/maps heavy hits:")
     try:
-        maps = Path("/proc/self/maps").read_text().splitlines()
-        heavy = []
-        for line in maps:
+        hits = []
+        for line in Path("/proc/self/maps").read_text().splitlines():
             if "/" not in line:
                 continue
             path = line[line.find("/") :]
+            low = path.lower()
             if any(
-                k in path
+                k in low
                 for k in (
-                    "torch",
+                    "libtorch",
+                    "torch/",
+                    "libtensorflow",
+                    "libopenblas",
+                    "liblapack",
+                    "libgfortran",
+                    "numba",
+                    "llvmlite",
+                    "cudnn",
+                    "cublas",
+                    "onnxruntime",
                     "transformers",
                     "nltk",
-                    "pypinyin",
-                    "onnxruntime",
-                    "scipy",
-                    "jieba",
-                    "melo",
-                    "cuda",
-                    "cudnn",
                 )
             ):
-                heavy.append(path)
-        uniq = sorted(set(heavy))[:40]
-        print("\nmapped libs (sample):")
-        for u in uniq:
-            print(f"  {u}")
+                hits.append(path)
+        for h in sorted(set(hits))[:50]:
+            print(f"  {h}")
+        if not hits:
+            print("  (none)")
     except Exception as e:
-        print(f"maps skip: {e}")
+        print(f"  maps error: {e}")
 
     out = Path("/tmp/g2p_imports.json")
-    out.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n")
-    print("-" * 64)
-    print(f"final_rss={rss_mb():.1f}")
-    print("TOP deltas:")
-    for r in sorted(rows, key=lambda x: x["delta_mib"], reverse=True)[:8]:
-        print(f"  {r['delta_mib']:+7.1f}  {r['step']}")
+    payload = {"pid": os.getpid(), "stages": rows, "new_modules": new_mods}
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    print("\nSUMMARY A→E:")
+    for r in rows:
+        print(
+            f"  {r['step']:28s} rss={r['rss_mib']} delta={r.get('delta_mib', 0):+}"
+        )
     print(f"wrote {out}")
 
 
