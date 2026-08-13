@@ -95,7 +95,8 @@ def _find_checkpoint() -> str:
     candidates = [
         os.path.join(here, "checkpoint20.npz"),
         "/models/melo-openepd-g2p-assets/vendor/melo_g2p/text/checkpoint20.npz",
-        # Host data disk → usually bind-mounted into the container as /models
+        # Host / JuiceFS data disk (bind-mount into container if needed)
+        "/mnt/data/fanyi/tts/g2p/checkpoint20.npz",
         "/data/fanyi/tts/g2p/checkpoint20.npz",
         os.path.expanduser("~/fanyi/tts/g2p/checkpoint20.npz"),
     ]

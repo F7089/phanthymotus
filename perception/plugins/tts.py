@@ -929,6 +929,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         os.environ["MELO_OPENEPD_DICT"] = openepd
         for ckpt in (
             os.path.join(g2p_root, "text", "checkpoint20.npz"),
+            "/mnt/data/fanyi/tts/g2p/checkpoint20.npz",
             "/data/fanyi/tts/g2p/checkpoint20.npz",
             os.path.expanduser("~/fanyi/tts/g2p/checkpoint20.npz"),
         ):
