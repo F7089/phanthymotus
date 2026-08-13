@@ -46,13 +46,15 @@ def main() -> None:
         shutil.copy2(src, work_onnx)
 
     print("converting to ORT format (may take a few minutes)...")
+    # NOTE: --optimization_style uses nargs='+', so model path MUST come first
+    # (otherwise the .onnx path is swallowed as a fake "style" choice).
     cmd = [
         sys.executable,
         "-m",
         "onnxruntime.tools.convert_onnx_models_to_ort",
+        str(work_onnx),
         "--optimization_style",
         "Fixed",
-        str(work_onnx),
     ]
     print("+", " ".join(cmd))
     subprocess.check_call(cmd)
