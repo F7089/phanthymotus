@@ -47,7 +47,7 @@ def run_case(case: str) -> dict:
         "/models/vits-melo-longanlingxin-openepd-nobert-44100-fp32"
     )
     ext_dir = Path(os.environ.get("MELO_ORT_DIR", "/tmp/melo_fp32_ort"))
-    text = os.environ.get(
+    bench_text = os.environ.get(
         "BENCH_TEXT", "你好，这是榜单模拟测试。今天天气怎么样？"
     )
 
@@ -65,14 +65,14 @@ def run_case(case: str) -> dict:
     os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
     # Prefer image slim sources if present (git overlay).
     slim = Path("/work/melo_g2p_slim")
-    text = g2p / "vendor" / "melo_g2p" / "text"
-    if slim.is_dir() and text.is_dir():
+    vendor_text = g2p / "vendor" / "melo_g2p" / "text"
+    if slim.is_dir() and vendor_text.is_dir():
         import shutil
 
         for name in ("english.py", "slim_g2p_oov.py", "openepd_compact.py"):
             src = slim / name
             if src.is_file():
-                shutil.copy2(src, text / name)
+                shutil.copy2(src, vendor_text / name)
     sys.path.insert(0, str(g2p / "vendor"))
     # Drop cached english if any
     for key in list(sys.modules):
@@ -84,7 +84,7 @@ def run_case(case: str) -> dict:
     with open(g2p / "config.json", encoding="utf-8") as f:
         meta = json.load(f)
     phone_ids, tone_ids = encode_phones_tones(
-        text,
+        bench_text,
         list(meta["symbols"]),
         add_blank=bool(meta.get("add_blank", True)),
         language=str(meta.get("language") or "ZH_MIX_EN"),
@@ -185,6 +185,8 @@ def main() -> None:
         if p.is_file():
             summary.append(json.loads(p.read_text()))
 
+    # Drop stale worker json from failed runs
+    summary = [r for r in summary if r.get("ok") or r.get("error") or (r.get("stages") or {}).get("after_run2")]
     out = Path("/tmp/rss_stages.json")
     out.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
     print(f"\nwrote {out}")
@@ -192,10 +194,15 @@ def main() -> None:
     print("  host_base = after_g2p_ready (no ORT session)")
     print("  session_cost = after_session - after_g2p_ready")
     print("  steady = after_run2")
+    if not summary:
+        print("  (no successful cases — see tracebacks above)")
     for r in summary:
         st = r.get("stages") or {}
         if r.get("error"):
             print(f"  {r['case']}: ERROR {r['error'][:100]}")
+            continue
+        if not st.get("after_run2"):
+            print(f"  {r['case']}: INCOMPLETE (no after_run2)")
             continue
         print(
             f"  {r['case']}: host_base={st.get('after_g2p_ready')}  "
