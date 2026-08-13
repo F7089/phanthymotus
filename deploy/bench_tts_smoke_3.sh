@@ -10,11 +10,11 @@ mkdir -p "$OUT"
 WARMUP_ZH="你好，这是测试。"
 WARMUP_EN="hello, this is a test."
 
-# ~20 chars each; CN + CN/EN mix (no product-case leakage)
+# ~40 chars each; CN + CN/EN mix (no product-case leakage)
 CASES=(
-  "明天早上九点在公司门口见面。"
-  "请打开 WiFi 后继续下载更新。"
-  "地铁去 Airport 大概要多久？"
+  "明天早上九点我们在公司门口见面，记得带上会议需要的材料。"
+  "请先打开 WiFi 连接办公室网络，然后再继续下载这次的更新包。"
+  "从这里坐地铁去 Airport 大概需要多长时间，中间要不要换乘？"
 )
 
 post() {
