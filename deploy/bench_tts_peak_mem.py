@@ -240,7 +240,19 @@ def synthesize(url: str, text: str, timeout_s: float = 120.0) -> tuple[bytes, fl
     return base64.b64decode(data["wav_b64"]), elapsed
 
 
-def restart_container(image: str, name: str, mcp_port: int, ws_port: int) -> None:
+def _repo_root() -> Path:
+    # deploy/bench_tts_peak_mem.py -> repo root
+    return Path(__file__).resolve().parents[1]
+
+
+def restart_container(
+    image: str,
+    name: str,
+    mcp_port: int,
+    ws_port: int,
+    mount_fp32_config: bool = True,
+) -> None:
+    """Recreate container. Image may still bake INT8 config — mount host FP32 files."""
     subprocess.run(["docker", "rm", "-f", name], check=False, stdout=subprocess.DEVNULL)
     cmd = [
         "docker",
@@ -264,6 +276,22 @@ def restart_container(image: str, name: str, mcp_port: int, ws_port: int) -> Non
     ]
     if Path("/models").is_dir():
         cmd += ["-v", "/models:/models"]
+
+    root = _repo_root()
+    cfg = root / "perception" / "config.yaml"
+    dl = root / "perception" / "utils" / "model_downloader.py"
+    tts = root / "perception" / "plugins" / "tts.py"
+    if mount_fp32_config and cfg.is_file() and dl.is_file():
+        cmd += ["-v", f"{cfg}:/work/config.yaml:ro"]
+        cmd += ["-v", f"{dl}:/work/utils/model_downloader.py:ro"]
+        if tts.is_file():
+            cmd += ["-v", f"{tts}:/work/plugins/tts.py:ro"]
+        print(f"[restart] mounting host FP32 config from {cfg}")
+    else:
+        print(
+            "[restart] WARN: host config not mounted; image-baked config may still be INT8"
+        )
+
     cmd.append(image)
     print("[restart]", " ".join(cmd))
     subprocess.check_call(cmd)
