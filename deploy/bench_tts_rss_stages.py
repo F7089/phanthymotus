@@ -56,10 +56,30 @@ def run_case(case: str) -> dict:
     stages["after_numpy_ort_import"] = round(rss_mb(), 1)
     print(f"  after_numpy_ort_import   rss={stages['after_numpy_ort_import']}")
 
-    os.environ["MELO_OPENEPD_DICT"] = str(g2p / "openepd_eng_dict.pickle")
+    oedb = g2p / "openepd_eng_dict.oedb"
+    pkl = g2p / "openepd_eng_dict.pickle"
+    os.environ["MELO_OPENEPD_DICT"] = str(oedb if oedb.is_file() else pkl)
+    ckpt = g2p / "vendor" / "melo_g2p" / "text" / "checkpoint20.npz"
+    if ckpt.is_file():
+        os.environ["MELO_G2P_OOV_CKPT"] = str(ckpt)
     os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
+    # Prefer image slim sources if present (git overlay).
+    slim = Path("/work/melo_g2p_slim")
+    text = g2p / "vendor" / "melo_g2p" / "text"
+    if slim.is_dir() and text.is_dir():
+        import shutil
+
+        for name in ("english.py", "slim_g2p_oov.py", "openepd_compact.py"):
+            src = slim / name
+            if src.is_file():
+                shutil.copy2(src, text / name)
     sys.path.insert(0, str(g2p / "vendor"))
+    # Drop cached english if any
+    for key in list(sys.modules):
+        if key.startswith("melo_g2p"):
+            sys.modules.pop(key, None)
     from melo_g2p.encode import encode_phones_tones
+    print(f"  openepd={os.environ['MELO_OPENEPD_DICT']}")
 
     with open(g2p / "config.json", encoding="utf-8") as f:
         meta = json.load(f)

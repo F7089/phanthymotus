@@ -172,12 +172,55 @@ def cache_dict(g2p_dict, file_path):
         pickle.dump(g2p_dict, pickle_file)
 
 
+def _resolve_openepd_path() -> str:
+    """Prefer compact .oedb (mmap) over pickle when both exist."""
+    env = os.environ.get("MELO_OPENEPD_DICT", "").strip()
+    cands = []
+    if env:
+        cands.append(env)
+        if env.endswith(".pickle"):
+            cands.insert(0, env[: -len(".pickle")] + ".oedb")
+    cands.extend(
+        [
+            os.path.join(current_file_path, "openepd_eng_dict.oedb"),
+            "/models/melo-openepd-g2p-assets/openepd_eng_dict.oedb",
+            OPENEPD_DICT_PATH,
+            os.path.join(current_file_path, "openepd_eng_dict.pickle"),
+            "/models/melo-openepd-g2p-assets/openepd_eng_dict.pickle",
+        ]
+    )
+    for p in cands:
+        if p and os.path.isfile(p):
+            return p
+    return OPENEPD_DICT_PATH
+
+
 def get_dict():
-    # Prefer OpenEPD-extended dictionary when available.
-    if os.path.exists(OPENEPD_DICT_PATH):
-        with open(OPENEPD_DICT_PATH, "rb") as pickle_file:
+    # Prefer OpenEPD (compact mmap .oedb, else pickle).
+    path = _resolve_openepd_path()
+    if os.path.exists(path):
+        if path.endswith(".oedb") or path.endswith(".bin"):
+            try:
+                from .openepd_compact import CompactEngDict
+            except Exception:  # pragma: no cover
+                from openepd_compact import CompactEngDict  # type: ignore
+
+            g2p_dict = CompactEngDict(path)
+            print(
+                "[melo english] using OpenEPD compact:",
+                path,
+                "size=",
+                len(g2p_dict),
+            )
+            return g2p_dict
+        with open(path, "rb") as pickle_file:
             g2p_dict = pickle.load(pickle_file)
-        print("[melo english] using OpenEPD eng_dict:", OPENEPD_DICT_PATH, "size=", len(g2p_dict))
+        print(
+            "[melo english] using OpenEPD eng_dict:",
+            path,
+            "size=",
+            len(g2p_dict),
+        )
         return g2p_dict
 
     if os.path.exists(CACHE_PATH):

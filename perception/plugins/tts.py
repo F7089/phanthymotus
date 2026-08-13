@@ -902,8 +902,10 @@ def _install_slim_g2p_code(text_dir: str) -> None:
         )
     dst = Path(text_dir)
     dst.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src_dir / "english.py", dst / "english.py")
-    shutil.copy2(src_dir / "slim_g2p_oov.py", dst / "slim_g2p_oov.py")
+    for name in ("english.py", "slim_g2p_oov.py", "openepd_compact.py"):
+        src = src_dir / name
+        if src.is_file():
+            shutil.copy2(src, dst / name)
     eng = (dst / "english.py").read_text(encoding="utf-8")
     if "from g2p_en import" in eng or "_g2p = G2p()" in eng:
         raise RuntimeError(f"slim overlay failed; still g2p_en in {dst}/english.py")
@@ -950,7 +952,8 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             model_path + ".data"
         ):
             pass  # model.onnx + model.onnx.data
-        openepd = os.path.join(g2p_dir, "openepd_eng_dict.pickle")
+        openepd_pickle = os.path.join(g2p_dir, "openepd_eng_dict.pickle")
+        openepd_oedb = os.path.join(g2p_dir, "openepd_eng_dict.oedb")
         cfg_path = os.path.join(g2p_dir, "config.json")
         vendor = os.path.join(g2p_dir, "vendor")
         g2p_root = os.path.join(vendor, "melo_g2p")
@@ -960,16 +963,22 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             raise FileNotFoundError(model_path)
         if not os.path.isfile(cfg_path):
             raise FileNotFoundError(cfg_path)
-        if not os.path.isfile(openepd):
-            raise FileNotFoundError(openepd)
+        if not os.path.isfile(openepd_pickle) and not os.path.isfile(openepd_oedb):
+            raise FileNotFoundError(openepd_pickle)
         if not os.path.isdir(g2p_root):
             raise FileNotFoundError(g2p_root)
 
-        # Large OOV weights from JuiceFS (not git). Prefer text/ next to vendor.
+        # Large assets from JuiceFS (not git).
         ensure_model("tts_melo_g2p_oov_ckpt", text_dir)
+        try:
+            ensure_model("tts_melo_openepd_compact", g2p_dir)
+        except Exception as e:
+            # Compact optional until published on JuiceFS; fall back to pickle.
+            print(f"[tts] melo_openepd: compact lexicon download skipped: {e}")
         # Slim python from image (git) — overwrite whatever was in the assets tar.
         _install_slim_g2p_code(text_dir)
 
+        openepd = openepd_oedb if os.path.isfile(openepd_oedb) else openepd_pickle
         os.environ["MELO_OPENEPD_DICT"] = openepd
         ckpt = os.path.join(text_dir, "checkpoint20.npz")
         if os.path.isfile(ckpt):

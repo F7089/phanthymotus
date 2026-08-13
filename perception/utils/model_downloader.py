@@ -69,6 +69,12 @@ MODELS = {
         "check_file": "checkpoint20.npz",
         "single_file": True,
     },
+    # Compact OpenEPD lexicon (mmap .oedb). JuiceFS only — never git.
+    "tts_melo_openepd_compact": {
+        "url": f"{JUICEFS_BASE}/openepd_eng_dict.oedb",
+        "check_file": "openepd_eng_dict.oedb",
+        "single_file": True,
+    },
     # Voice ONNX-only packs (model.onnx + tiny model_meta.json)
     # Prefer FP32 on Jetson CUDA EP: QUInt8 dynamic quant causes ~660 Memcpy
     # fallbacks and ~27x slower ORT than FP32 (see Jetson int8 vs fp32 bench).

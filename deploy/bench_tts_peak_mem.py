@@ -341,7 +341,12 @@ def main() -> None:
     ap.add_argument("--image", default="phanthymotus-perception-tts:927c9c6-jp61")
     ap.add_argument("--mcp-port", type=int, default=15730)
     ap.add_argument("--ws-port", type=int, default=15731)
-    ap.add_argument("--restart", action="store_true", help="rm+run container before measure")
+    ap.add_argument(
+        "--restart",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="cold start: rm+run container before measure (default: true; use --no-restart to skip)",
+    )
     ap.add_argument("--text", default=DEFAULT_TEXT)
     ap.add_argument("--warmup", type=int, default=1)
     ap.add_argument("--runs", type=int, default=3)
