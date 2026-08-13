@@ -71,11 +71,15 @@ def _piper_run(sess, ort_module, feeds):
 
 
 def _piper_ort_providers(hw_provider: str) -> tuple:
-    """Return (onnxruntime module, provider list) for Piper InferenceSession.
+    """Return (onnxruntime module, provider list) for Piper/Melo InferenceSession.
 
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
-    Prefer RTF: cuDNN max workspace; default no hard gpu_mem_limit (was 512MiB).
-    Set TTS_ORT_GPU_MEM_LIMIT_MB to re-enable a soft cap.
+
+    Memory-oriented knobs (env, Jetson FP32 Melo):
+      TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 1; set 0 to cap conv workspace ~32MB)
+      TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo  (default unset=ORT default)
+      TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (soft CUDA EP arena cap only; not whole process)
+      TTS_ORT_CUDNN_ALGO=HEURISTIC|DEFAULT|EXHAUSTIVE
     """
     import os
 
@@ -84,14 +88,20 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
+            max_ws = os.environ.get("TTS_ORT_CUDNN_MAX_WORKSPACE", "1").strip() or "1"
+            algo = os.environ.get("TTS_ORT_CUDNN_ALGO", "HEURISTIC").strip() or "HEURISTIC"
             cuda_opts = {
                 "device_id": 0,
-                "cudnn_conv_use_max_workspace": "1",
-                "cudnn_conv_algo_search": "HEURISTIC",
+                "cudnn_conv_use_max_workspace": max_ws,
+                "cudnn_conv_algo_search": algo,
             }
+            arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "").strip()
+            if arena in ("kSameAsRequested", "kNextPowerOfTwo"):
+                cuda_opts["arena_extend_strategy"] = arena
             mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "").strip()
             if mem_mb.isdigit() and int(mem_mb) > 0:
                 cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
+            log.info(f"[tts] CUDA EP options: {cuda_opts}")
             return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
         require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
         msg = (

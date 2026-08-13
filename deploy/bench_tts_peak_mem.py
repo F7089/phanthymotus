@@ -245,12 +245,46 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def cgroup_memory_bytes(container: str) -> dict[str, int | None]:
+    """Read cgroup v2 memory.current / memory.peak for the container."""
+    out: dict[str, int | None] = {"current": None, "peak": None}
+    try:
+        pid = subprocess.check_output(
+            ["docker", "inspect", "-f", "{{.State.Pid}}", container],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        if not pid or pid == "0":
+            return out
+        cg = ""
+        with open(f"/proc/{pid}/cgroup", encoding="utf-8") as f:
+            for line in f:
+                # 0::/system.slice/docker-xxx.scope
+                if line.startswith("0::"):
+                    cg = line.strip().split(":", 2)[-1]
+                    break
+                parts = line.strip().split(":")
+                if len(parts) >= 3 and "memory" in parts[1]:
+                    cg = parts[2]
+        if not cg:
+            return out
+        base = Path("/sys/fs/cgroup") / cg.lstrip("/")
+        for key, name in (("current", "memory.current"), ("peak", "memory.peak")):
+            p = base / name
+            if p.is_file():
+                out[key] = int(p.read_text().strip())
+    except Exception:
+        return out
+    return out
+
+
 def restart_container(
     image: str,
     name: str,
     mcp_port: int,
     ws_port: int,
     mount_fp32_config: bool = True,
+    extra_env: dict[str, str] | None = None,
 ) -> None:
     """Recreate container. Image may still bake INT8 config — mount host FP32 files."""
     subprocess.run(["docker", "rm", "-f", name], check=False, stdout=subprocess.DEVNULL)
@@ -274,6 +308,10 @@ def restart_container(
         "-e",
         f"WS_PORT={ws_port}",
     ]
+    for k, v in (extra_env or {}).items():
+        if v is None or v == "":
+            continue
+        cmd += ["-e", f"{k}={v}"]
     if Path("/models").is_dir():
         cmd += ["-v", "/models:/models"]
 
@@ -309,50 +347,91 @@ def main() -> None:
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--interval", type=float, default=0.2)
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--label", default="", help="tag written into report (sweep id)")
+    ap.add_argument(
+        "--ort-env",
+        action="append",
+        default=[],
+        help="extra -e KEY=VAL for container (repeatable), e.g. TTS_ORT_CUDNN_MAX_WORKSPACE=0",
+    )
     args = ap.parse_args()
+
+    extra_env: dict[str, str] = {}
+    for item in args.ort_env:
+        if "=" not in item:
+            raise SystemExit(f"bad --ort-env {item!r}, want KEY=VAL")
+        k, v = item.split("=", 1)
+        extra_env[k] = v
 
     url = f"http://127.0.0.1:{args.mcp_port}/tts/test"
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    report = args.out_dir / "peak_mem_report.json"
+    tag = args.label or "peakmem"
+    report = args.out_dir / f"peak_mem_report_{tag}.json"
 
-    print("NOTE: Jetson uses unified memory; tegrastats RAM is the primary signal.")
-    print(f"container={args.container} url={url}")
-    print(f"out_dir={args.out_dir}")
+    print("NOTE: Jetson unified memory; prefer cgroup memory.peak + tegrastats.")
+    print(f"container={args.container} url={url} label={tag}")
+    print(f"out_dir={args.out_dir} ort_env={extra_env}")
 
     sampler = Sampler(container=args.container, interval_s=args.interval)
     sampler.start()
     time.sleep(0.5)
 
     phases: dict[str, dict] = {}
+    cgroup_after_ready: dict[str, int | None] = {}
+    cgroup_after_infer: dict[str, int | None] = {}
 
     try:
         if args.restart:
             t_boot = time.time()
-            restart_container(args.image, args.container, args.mcp_port, args.ws_port)
+            restart_container(
+                args.image,
+                args.container,
+                args.mcp_port,
+                args.ws_port,
+                extra_env=extra_env,
+            )
             print("waiting for MCP / first model load ...")
             wait_mcp(url, timeout_s=300)
-            # allow a few more samples after ready
             time.sleep(1.0)
             phases["startup_to_ready"] = sampler.peak_since(t_boot)
+            cgroup_after_ready = cgroup_memory_bytes(args.container)
             print("[startup_to_ready]", phases["startup_to_ready"])
+            print("[cgroup_after_ready]", cgroup_after_ready)
         else:
             print("using existing container (no --restart)")
             wait_mcp(url, timeout_s=60)
+            cgroup_after_ready = cgroup_memory_bytes(args.container)
 
-        # warmup (not counted in infer peak window unless you want it)
         for i in range(max(0, args.warmup)):
             print(f"[warmup {i+1}/{args.warmup}]")
             synthesize(url, args.text)
+
+        # Reset peak if kernel supports it (best-effort; may need root)
+        try:
+            pid = subprocess.check_output(
+                ["docker", "inspect", "-f", "{{.State.Pid}}", args.container],
+                text=True,
+            ).strip()
+            with open(f"/proc/{pid}/cgroup", encoding="utf-8") as f:
+                cg = ""
+                for line in f:
+                    if line.startswith("0::"):
+                        cg = line.strip().split(":", 2)[-1]
+                        break
+            peak_path = Path("/sys/fs/cgroup") / cg.lstrip("/") / "memory.peak"
+            if peak_path.is_file() and os.access(peak_path, os.W_OK):
+                peak_path.write_text("0\n")
+                print(f"[cgroup] reset memory.peak via {peak_path}")
+        except Exception as e:
+            print(f"[cgroup] peak reset skipped: {e}")
 
         t_infer = time.time()
         rtf_rows = []
         for i in range(args.runs):
             wav, wall = synthesize(url, args.text)
-            path = args.out_dir / f"peakmem_run{i+1}.wav"
+            path = args.out_dir / f"peakmem_{tag}_run{i+1}.wav"
             path.write_bytes(wav)
-            # duration from wav header-ish: 16k mono s16
-            dur = (len(wav) - 44) / 2 / 16000.0 if len(wav) > 44 else 0.0
-            # rough if not wav-wrapped; /tts/test returns wav
+            dur = 0.0
             if wav[:4] == b"RIFF":
                 import wave
                 import io
@@ -364,32 +443,48 @@ def main() -> None:
             print(f"[run {i+1}] wall={wall:.3f}s audio={dur:.3f}s rtf={rtf:.3f} -> {path}")
 
         phases["inference"] = sampler.peak_since(t_infer)
+        cgroup_after_infer = cgroup_memory_bytes(args.container)
         print("[inference]", phases["inference"])
+        print("[cgroup_after_infer]", cgroup_after_infer)
+
+        def _mib(b: int | None) -> float | None:
+            return None if b is None else round(b / 1024 / 1024, 1)
 
         summary = {
+            "label": tag,
+            "ort_env": extra_env,
             "container": args.container,
             "image": args.image if args.restart else "(existing)",
             "text": args.text,
             "phases": phases,
+            "cgroup_after_ready_mib": {
+                "current": _mib(cgroup_after_ready.get("current")),
+                "peak": _mib(cgroup_after_ready.get("peak")),
+            },
+            "cgroup_after_infer_mib": {
+                "current": _mib(cgroup_after_infer.get("current")),
+                "peak": _mib(cgroup_after_infer.get("peak")),
+            },
             "runs": rtf_rows,
             "avg_rtf": (
                 sum(r["rtf"] for r in rtf_rows) / len(rtf_rows) if rtf_rows else None
             ),
             "note": (
-                "Jetson unified memory: prefer tegrastats_ram_peak_mb; "
-                "nvsmi may be unavailable; docker_mb is cgroup container usage."
+                "Prefer cgroup memory.peak (kernel max) over docker stats; "
+                "gpu_mem_limit only caps CUDA EP arena, not whole process."
             ),
         }
         report.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
         print("---")
-        print(f"avg_rtf={summary['avg_rtf']}")
-        for phase, stats in phases.items():
-            print(
-                f"{phase}: tegras_peak={stats.get('tegra_ram_peak_mb')}MB "
-                f"(delta={stats.get('tegra_ram_delta_mb')}) "
-                f"nvsmi_peak={stats.get('nvsmi_peak_mb')} "
-                f"docker_peak={stats.get('docker_peak_mb')}"
-            )
+        print(f"label={tag} avg_rtf={summary['avg_rtf']}")
+        print(
+            "cgroup_ready_peak_mib=",
+            summary["cgroup_after_ready_mib"]["peak"],
+            "cgroup_infer_peak_mib=",
+            summary["cgroup_after_infer_mib"]["peak"],
+            "cgroup_infer_current_mib=",
+            summary["cgroup_after_infer_mib"]["current"],
+        )
         print(f"report: {report}")
     finally:
         sampler.stop()
