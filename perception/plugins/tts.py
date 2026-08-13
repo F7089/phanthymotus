@@ -103,32 +103,68 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
       TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo  (default unset=ORT default)
       TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (soft CUDA EP arena cap only; not whole process)
       TTS_ORT_CUDNN_ALGO=HEURISTIC|DEFAULT|EXHAUSTIVE
+      TTS_ORT_USE_TRT=1                 (TensorRT EP ahead of CUDA; FP32 by default)
+      TTS_ORT_TRT_WORKSPACE_MB=<int>    (default 512)
+      TTS_ORT_TRT_CACHE=<path>          (engine cache dir)
+    Or set hw_provider=tensorrt / cuda.
     """
     import os
 
     import onnxruntime as ort
 
-    if hw_provider == "cuda":
+    hw = (hw_provider or "cpu").lower().strip()
+    use_trt = hw in ("tensorrt", "trt") or (
+        hw == "cuda" and os.environ.get("TTS_ORT_USE_TRT", "0") == "1"
+    )
+    want_gpu = hw in ("cuda", "tensorrt", "trt") or use_trt
+
+    if want_gpu:
         available = ort.get_available_providers()
-        if "CUDAExecutionProvider" in available:
-            max_ws = os.environ.get("TTS_ORT_CUDNN_MAX_WORKSPACE", "1").strip() or "1"
-            algo = os.environ.get("TTS_ORT_CUDNN_ALGO", "HEURISTIC").strip() or "HEURISTIC"
-            cuda_opts = {
+        max_ws = os.environ.get("TTS_ORT_CUDNN_MAX_WORKSPACE", "1").strip() or "1"
+        algo = os.environ.get("TTS_ORT_CUDNN_ALGO", "HEURISTIC").strip() or "HEURISTIC"
+        cuda_opts = {
+            "device_id": 0,
+            "cudnn_conv_use_max_workspace": max_ws,
+            "cudnn_conv_algo_search": algo,
+        }
+        arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "").strip()
+        if arena in ("kSameAsRequested", "kNextPowerOfTwo"):
+            cuda_opts["arena_extend_strategy"] = arena
+        mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "").strip()
+        if mem_mb.isdigit() and int(mem_mb) > 0:
+            cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
+
+        providers = []
+        if use_trt and "TensorrtExecutionProvider" in available:
+            ws_mb = int(os.environ.get("TTS_ORT_TRT_WORKSPACE_MB", "512") or "512")
+            cache = os.environ.get(
+                "TTS_ORT_TRT_CACHE", "/tmp/ort_trt_cache_melo"
+            ).strip()
+            os.makedirs(cache, exist_ok=True)
+            trt_opts = {
                 "device_id": 0,
-                "cudnn_conv_use_max_workspace": max_ws,
-                "cudnn_conv_algo_search": algo,
+                "trt_max_workspace_size": ws_mb * 1024 * 1024,
+                "trt_fp16_enable": os.environ.get("TTS_ORT_TRT_FP16", "0") == "1",
+                "trt_engine_cache_enable": True,
+                "trt_engine_cache_path": cache,
             }
-            arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "").strip()
-            if arena in ("kSameAsRequested", "kNextPowerOfTwo"):
-                cuda_opts["arena_extend_strategy"] = arena
-            mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "").strip()
-            if mem_mb.isdigit() and int(mem_mb) > 0:
-                cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
+            providers.append(("TensorrtExecutionProvider", trt_opts))
+            log.info(f"[tts] TensorRT EP options: {trt_opts}")
+        elif use_trt:
+            log.warning(
+                "[tts] TensorRT requested but TensorrtExecutionProvider missing; "
+                f"available={available}; falling back to CUDA EP"
+            )
+
+        if "CUDAExecutionProvider" in available:
+            providers.append(("CUDAExecutionProvider", cuda_opts))
             log.info(f"[tts] CUDA EP options: {cuda_opts}")
-            return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
+            providers.append("CPUExecutionProvider")
+            return ort, providers
+
         require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
         msg = (
-            "[tts] piper: CUDA requested but CUDAExecutionProvider missing; "
+            "[tts] GPU requested but CUDAExecutionProvider missing; "
             f"available={available}"
         )
         if require:
@@ -744,9 +780,15 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
             model_path, sess_options=so, providers=providers
         )
         active = self._sess.get_providers()
-        if hw_provider == "cuda" and "CUDAExecutionProvider" not in active:
+        hw = (hw_provider or "").lower()
+        want_gpu = hw in ("cuda", "tensorrt", "trt")
+        has_gpu = (
+            "CUDAExecutionProvider" in active
+            or "TensorrtExecutionProvider" in active
+        )
+        if want_gpu and not has_gpu:
             require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
-            msg = f"[tts] piper: session providers={active} (wanted CUDA)"
+            msg = f"[tts] piper: session providers={active} (wanted GPU)"
             if require:
                 raise RuntimeError(msg)
             log.warning(msg)
@@ -930,9 +972,15 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         )
         self._ort = ort
         active = self._sess.get_providers()
-        if hw_provider == "cuda" and "CUDAExecutionProvider" not in active:
+        hw = (hw_provider or "").lower()
+        want_gpu = hw in ("cuda", "tensorrt", "trt")
+        has_gpu = (
+            "CUDAExecutionProvider" in active
+            or "TensorrtExecutionProvider" in active
+        )
+        if want_gpu and not has_gpu:
             require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
-            msg = f"[tts] melo_openepd: providers={active} (wanted CUDA)"
+            msg = f"[tts] melo_openepd: providers={active} (wanted GPU)"
             if require:
                 raise RuntimeError(msg)
             log.warning(msg)
