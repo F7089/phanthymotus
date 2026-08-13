@@ -63,6 +63,12 @@ MODELS = {
         "check_file": "openepd_eng_dict.pickle",
     },
     # Voice ONNX-only packs (model.onnx + tiny model_meta.json)
+    # Prefer FP32 on Jetson CUDA EP: QUInt8 dynamic quant causes ~660 Memcpy
+    # fallbacks and ~27x slower ORT than FP32 (see Jetson int8 vs fp32 bench).
+    "tts_melo_openepd_fp32": {
+        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-fp32.tar.bz2",
+        "check_file": "model.onnx",
+    },
     "tts_melo_openepd_int8": {
         "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-int8.tar.bz2",
         "check_file": "model.onnx",

@@ -20,9 +20,10 @@ plugins:
   tts:
     enabled: true
     # OpenEPD Melo: voice ONNX tar + separate G2P/OpenEPD assets (JuiceFS)
+    # Default FP32: QUInt8+CUDA EP is ~27x slower on Orin (Memcpy fallback).
     backend: melo_openepd
-    model_name: tts_melo_openepd_int8
-    model_dir: /models/vits-melo-longanlingxin-openepd-nobert-44100-int8
+    model_name: tts_melo_openepd_fp32
+    model_dir: /models/vits-melo-longanlingxin-openepd-nobert-44100-fp32
     g2p_model_name: tts_melo_openepd_g2p
     g2p_dir: /models/melo-openepd-g2p-assets
     hw_provider: cuda
