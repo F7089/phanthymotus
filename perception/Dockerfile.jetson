@@ -20,6 +20,11 @@ ARG PYPI_MIRROR APT_MIRROR
 # TTS-only Jetson builds can skip heavy VOP (ultralytics/CLIP). Leaderboard TTS OK.
 ARG SKIP_VOP_DEPS=ON
 
+# jp6 base often sets PIP_INDEX_URL=jetson.webredirect.org (unreachable here).
+ENV PIP_INDEX_URL=${PYPI_MIRROR} \
+    PIP_EXTRA_INDEX_URL= \
+    PIP_TRUSTED_HOST="mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn pypi.org files.pythonhosted.org"
+
 # ── APT mirror (conditional) ─────────────────────────────────────
 RUN if [ -n "${APT_MIRROR}" ]; then \
         sed -i "s/archive.ubuntu.com/${APT_MIRROR}/g; s/ports.ubuntu.com/${APT_MIRROR}/g" /etc/apt/sources.list; \
@@ -97,7 +102,9 @@ RUN pip3 uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true; \
     echo "python_tag=${PYTAG} wheel=${ONNXRUNTIME_GPU_WHL_NAME}"; \
     if echo "${ONNXRUNTIME_GPU_WHL_NAME}" | grep -q "${PYTAG}"; then \
       python3 -c "import os,urllib.request; url='${ONNXRUNTIME_GPU_WHL_URL}'; name='${ONNXRUNTIME_GPU_WHL_NAME}'; path='/tmp/'+name; print('downloading', url); urllib.request.urlretrieve(url, path); print('bytes', os.path.getsize(path))" && \
-      pip3 install --no-cache-dir "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
+      pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
+        coloredlogs flatbuffers packaging protobuf sympy humanfriendly mpmath && \
+      pip3 install --no-cache-dir --no-deps "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
       rm -f "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
       python3 -c "import onnxruntime as ort; p=ort.get_available_providers(); print('onnxruntime', ort.__version__, 'providers=', p); assert 'CUDAExecutionProvider' in p, p"; \
     else \
