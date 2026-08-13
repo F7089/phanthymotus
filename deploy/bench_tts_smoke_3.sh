@@ -31,7 +31,7 @@ wall = time.perf_counter() - t0
 # /tts/test returns {"ok":true,"wav_b64":"..."} not raw WAV
 payload = json.loads(raw.decode("utf-8"))
 if not payload.get("ok") or "wav_b64" not in payload:
-    raise SystemExit(f"bad response: {payload!r[:200]}")
+    raise SystemExit("bad response: " + repr(payload)[:200])
 data = base64.b64decode(payload["wav_b64"])
 open(wav, "wb").write(data)
 dur = 0.0
