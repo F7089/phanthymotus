@@ -126,6 +126,7 @@ WORKDIR /work
 COPY perception/main.py /work/main.py
 COPY perception/plugins/ /work/plugins/
 COPY perception/utils/ /work/utils/
+COPY perception/melo_g2p_slim/ /work/melo_g2p_slim/
 COPY perception/config.yaml /work/config.yaml
 COPY perception/deploy/ /deploy/
 COPY deploy/judgeflow_tts_run.sh /deploy/judgeflow_tts_run.sh

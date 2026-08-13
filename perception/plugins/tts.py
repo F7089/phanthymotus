@@ -870,12 +870,50 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
         return _float_samples_to_pcm16(samples)
 
 
-class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
-    """Melo ONNX via ORT + separately downloaded OpenEPD / ZH_MIX_EN G2P.
+def _install_slim_g2p_code(text_dir: str) -> None:
+    """Copy slim english G2P .py from the git image into downloaded assets.
 
-    JuiceFS (see melo_training/lib/pack_jetson_melo_openepd.py):
-      - voice tar: model.onnx (+ tiny model_meta.json) only
-      - assets tar melo-openepd-g2p-assets: openepd pickle + vendor/melo_g2p + symbols
+    Large files (OpenEPD pickle, checkpoint20.npz, ONNX) stay on JuiceFS.
+    Small code is always taken from the container image built from git.
+    """
+    import shutil
+    from pathlib import Path
+
+    here = Path(__file__).resolve()
+    candidates = [
+        Path("/work/melo_g2p_slim"),
+        here.parents[1] / "melo_g2p_slim",  # perception/melo_g2p_slim
+        here.parents[2] / "deploy" / "melo_g2p_slim",
+        Path.home() / "fanyi" / "phanthymotus" / "deploy" / "melo_g2p_slim",
+        Path.home() / "fanyi" / "phanthymotus" / "perception" / "melo_g2p_slim",
+    ]
+    src_dir = next(
+        (
+            p
+            for p in candidates
+            if (p / "english.py").is_file() and (p / "slim_g2p_oov.py").is_file()
+        ),
+        None,
+    )
+    if src_dir is None:
+        raise FileNotFoundError(
+            "slim G2P code missing in image; expected /work/melo_g2p_slim "
+            "(git → docker build)"
+        )
+    dst = Path(text_dir)
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_dir / "english.py", dst / "english.py")
+    shutil.copy2(src_dir / "slim_g2p_oov.py", dst / "slim_g2p_oov.py")
+    eng = (dst / "english.py").read_text(encoding="utf-8")
+    if "from g2p_en import" in eng or "_g2p = G2p()" in eng:
+        raise RuntimeError(f"slim overlay failed; still g2p_en in {dst}/english.py")
+
+
+class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
+    """Melo ONNX via ORT + OpenEPD / ZH_MIX_EN G2P.
+
+    - git/image: slim english.py + slim_g2p_oov.py (/work/melo_g2p_slim)
+    - JuiceFS: openepd pickle, checkpoint20.npz, voice ONNX
     """
 
     def __init__(
@@ -896,7 +934,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         import sys
         from utils.model_downloader import ensure_model
 
-        # 1) shared OpenEPD + G2P  2) voice ONNX
+        # 1) JuiceFS large assets  2) voice ONNX  3) slim G2P code from image (git)
         ensure_model(g2p_model_name, g2p_dir)
         ensure_model(model_name, model_dir)
         mem_before = _process_rss_mb()
@@ -916,6 +954,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         cfg_path = os.path.join(g2p_dir, "config.json")
         vendor = os.path.join(g2p_dir, "vendor")
         g2p_root = os.path.join(vendor, "melo_g2p")
+        text_dir = os.path.join(g2p_root, "text")
 
         if not os.path.isfile(model_path):
             raise FileNotFoundError(model_path)
@@ -926,16 +965,15 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         if not os.path.isdir(g2p_root):
             raise FileNotFoundError(g2p_root)
 
+        # Large OOV weights from JuiceFS (not git). Prefer text/ next to vendor.
+        ensure_model("tts_melo_g2p_oov_ckpt", text_dir)
+        # Slim python from image (git) — overwrite whatever was in the assets tar.
+        _install_slim_g2p_code(text_dir)
+
         os.environ["MELO_OPENEPD_DICT"] = openepd
-        for ckpt in (
-            os.path.join(g2p_root, "text", "checkpoint20.npz"),
-            "/mnt/data/fanyi/tts/g2p/checkpoint20.npz",
-            "/data/fanyi/tts/g2p/checkpoint20.npz",
-            os.path.expanduser("~/fanyi/tts/g2p/checkpoint20.npz"),
-        ):
-            if os.path.isfile(ckpt):
-                os.environ.setdefault("MELO_G2P_OOV_CKPT", ckpt)
-                break
+        ckpt = os.path.join(text_dir, "checkpoint20.npz")
+        if os.path.isfile(ckpt):
+            os.environ["MELO_G2P_OOV_CKPT"] = ckpt
         os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
