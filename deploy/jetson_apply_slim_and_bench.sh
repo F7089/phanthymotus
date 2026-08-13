@@ -25,23 +25,17 @@ docker cp "$ROOT/perception/melo_g2p_slim/english.py" "$NAME:$TEXT/english.py"
 docker cp "$ROOT/perception/melo_g2p_slim/slim_g2p_oov.py" "$NAME:$TEXT/slim_g2p_oov.py"
 docker cp "$ROOT/perception/melo_g2p_slim/openepd_compact.py" "$NAME:$TEXT/openepd_compact.py"
 
-echo "== ensure OOV ckpt + compact OpenEPD from JuiceFS =="
+echo "== ensure OOV ckpt from JuiceFS (oedb built locally from pickle on first G2P load) =="
 docker exec -u 0 -w /work "$NAME" python3 - <<'PY'
 import os
 from utils.model_downloader import ensure_model
 
 text = "/models/melo-openepd-g2p-assets/vendor/melo_g2p/text"
-g2p = "/models/melo-openepd-g2p-assets"
 ensure_model("tts_melo_g2p_oov_ckpt", text)
-ensure_model("tts_melo_openepd_compact", g2p)
-oedb = os.path.join(g2p, "openepd_eng_dict.oedb")
-if os.path.isfile(oedb):
-    os.environ["MELO_OPENEPD_DICT"] = oedb
-    print("compact", oedb, "bytes", os.path.getsize(oedb))
-else:
-    print("WARN: openepd_eng_dict.oedb missing; still on pickle")
 print("ckpt", os.path.join(text, "checkpoint20.npz"),
       "exists", os.path.isfile(os.path.join(text, "checkpoint20.npz")))
+pkl = "/models/melo-openepd-g2p-assets/openepd_eng_dict.pickle"
+print("pickle", pkl, "exists", os.path.isfile(pkl))
 PY
 
 echo "== restart so TTS process reloads overlay =="

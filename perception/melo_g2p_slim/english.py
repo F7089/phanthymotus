@@ -195,9 +195,35 @@ def _resolve_openepd_path() -> str:
     return OPENEPD_DICT_PATH
 
 
+def _ensure_local_oedb(pickle_path: str) -> str | None:
+    """One-time pickle→.oedb next to downloaded assets (no JuiceFS upload)."""
+    if not pickle_path.endswith(".pickle") or not os.path.isfile(pickle_path):
+        return None
+    oedb_path = pickle_path[: -len(".pickle")] + ".oedb"
+    if os.path.isfile(oedb_path) and os.path.getsize(oedb_path) > 0:
+        return oedb_path
+    try:
+        try:
+            from .openepd_compact import build_compact
+        except Exception:  # pragma: no cover
+            from openepd_compact import build_compact  # type: ignore
+
+        meta = build_compact(pickle_path, oedb_path)
+        print("[melo english] built local OpenEPD compact:", meta)
+        return oedb_path
+    except Exception as e:
+        print("[melo english] compact build skipped:", e)
+        return None
+
+
 def get_dict():
     # Prefer OpenEPD (compact mmap .oedb, else pickle).
+    # If only pickle exists (already on JuiceFS/download), build .oedb locally once.
     path = _resolve_openepd_path()
+    if path.endswith(".pickle"):
+        built = _ensure_local_oedb(path)
+        if built:
+            path = built
     if os.path.exists(path):
         if path.endswith(".oedb") or path.endswith(".bin"):
             try:

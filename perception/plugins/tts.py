@@ -968,13 +968,9 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         if not os.path.isdir(g2p_root):
             raise FileNotFoundError(g2p_root)
 
-        # Large assets from JuiceFS (not git).
+        # Large assets from JuiceFS (not git). Compact .oedb is built locally
+        # from the downloaded pickle on first load (no extra JuiceFS publish).
         ensure_model("tts_melo_g2p_oov_ckpt", text_dir)
-        try:
-            ensure_model("tts_melo_openepd_compact", g2p_dir)
-        except Exception as e:
-            # Compact optional until published on JuiceFS; fall back to pickle.
-            print(f"[tts] melo_openepd: compact lexicon download skipped: {e}")
         # Slim python from image (git) — overwrite whatever was in the assets tar.
         _install_slim_g2p_code(text_dir)
 
