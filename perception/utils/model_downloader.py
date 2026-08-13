@@ -57,10 +57,12 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-8k.tar.bz2",
         "check_file": "model.onnx",
     },
-    # Shared OpenEPD + Melo ZH_MIX_EN G2P (NOT in voice onnx tar)
+    # Shared OpenEPD + Melo ZH_MIX_EN G2P (NOT in voice onnx tar).
+    # Large assets live on JuiceFS only; check_file requires slim OOV ckpt
+    # so old packs without checkpoint20.npz re-download automatically.
     "tts_melo_openepd_g2p": {
         "url": f"{JUICEFS_BASE}/melo-openepd-g2p-assets.tar.bz2",
-        "check_file": "openepd_eng_dict.pickle",
+        "check_file": "vendor/melo_g2p/text/checkpoint20.npz",
     },
     # Voice ONNX-only packs (model.onnx + tiny model_meta.json)
     # Prefer FP32 on Jetson CUDA EP: QUInt8 dynamic quant causes ~660 Memcpy
