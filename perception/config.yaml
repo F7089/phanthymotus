@@ -30,7 +30,8 @@ plugins:
     speaker_id: 0
     speed: 0.9
     text_normalize: false
-    max_segment_chars: 60
+    max_segment_chars: 80
+    prefer_single_pass: true
     warmup: true
     warmup_async: false
     warmup_texts:

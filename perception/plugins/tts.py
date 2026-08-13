@@ -351,7 +351,14 @@ class TTSAdapter(ABC):
     def split_text(self, text: str) -> list[str]:
         if getattr(self, "text_normalize", True):
             text = _normalize_tts_text(text)
+        text = (text or "").strip()
+        if not text:
+            return []
         max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
+        # Short utterances: one ORT pass (sentence-splitting adds CUDA launch cost).
+        # Streaming / long text still splits when over max_chars.
+        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
+            return [text]
         return _split_text_for_tts(text, max_chars)
 
     def synthesize(self, text: str) -> bytes:
@@ -1006,6 +1013,7 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
     else:
         adapter = SherpaOnnxTTSAdapter(model_dir, speaker_id, speed)
     adapter.max_segment_chars = int(cfg.get("max_segment_chars", MAX_SEGMENT_CHARS))
+    adapter.prefer_single_pass = bool(cfg.get("prefer_single_pass", True))
     adapter.text_normalize = bool(cfg.get("text_normalize", True))
     return adapter
 
