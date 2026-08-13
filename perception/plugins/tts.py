@@ -959,13 +959,19 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         so.enable_cpu_mem_arena = os.environ.get("TTS_ORT_CPU_ARENA", "0") == "1"
         # Default True in ORT; set TTS_ORT_MEM_PATTERN=0 for GPT "H".
         so.enable_mem_pattern = os.environ.get("TTS_ORT_MEM_PATTERN", "1") != "0"
+        # ORT may keep a second prepacked weight layout; disable to trade a bit of
+        # RTF for lower host RSS (session.disable_prepacking).
+        disable_prepack = os.environ.get("TTS_ORT_DISABLE_PREPACKING", "0") == "1"
+        if disable_prepack:
+            so.add_session_config_entry("session.disable_prepacking", "1")
         so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         log.info(
-            "[tts] melo SessionOptions: cpu_arena=%s mem_pattern=%s",
+            "[tts] melo SessionOptions: cpu_arena=%s mem_pattern=%s disable_prepacking=%s",
             so.enable_cpu_mem_arena,
             so.enable_mem_pattern,
+            disable_prepack,
         )
         self._sess = ort.InferenceSession(
             model_path, sess_options=so, providers=providers
