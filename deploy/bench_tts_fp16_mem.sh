@@ -14,44 +14,39 @@ mkdir -p "$OUT"
 SUMMARY="$OUT/fp16_mem_summary.tsv"
 echo -e "label\tavg_rtf\tcgroup_current_mib\theap_mib\tanon_mib" >"$SUMMARY"
 
-patch_config() {
-  local dtype="$1"  # fp32|fp16
-  local tmp
-  tmp="$(mktemp)"
-  python3 - <<PY
+write_config() {
+  local dtype="$1"
+  local dest="$2"
+  python3 - "$dtype" "$dest" <<'PY'
+import sys
 from pathlib import Path
+dtype, dest = sys.argv[1], Path(sys.argv[2])
 src = Path("perception/config.yaml")
-text = src.read_text(encoding="utf-8")
-# rewrite tts model_name / model_dir lines only
 out = []
-for line in text.splitlines(True):
+for line in src.read_text(encoding="utf-8").splitlines(True):
     if line.strip().startswith("model_name:") and "tts_melo_openepd" in line:
-        out.append(f"    model_name: tts_melo_openepd_${dtype}\n")
+        out.append(f"    model_name: tts_melo_openepd_{dtype}\n")
     elif line.strip().startswith("model_dir:") and "vits-melo-longanlingxin-openepd" in line:
-        out.append(f"    model_dir: /models/vits-melo-longanlingxin-openepd-nobert-44100-${dtype}\n")
+        out.append(
+            f"    model_dir: /models/vits-melo-longanlingxin-openepd-nobert-44100-{dtype}\n"
+        )
     else:
         out.append(line)
-Path("$tmp").write_text("".join(out), encoding="utf-8")
-print("wrote", "$tmp")
+dest.write_text("".join(out), encoding="utf-8")
 PY
-  echo "$tmp"
 }
 
 run_one() {
   local label="$1"
   local dtype="$2"
-  local cfg
-  cfg="$(patch_config "$dtype")"
-  # temporarily point mount at patched config via symlink in /tmp
   local mount_cfg="$OUT/config_${dtype}.yaml"
-  cp -f "$cfg" "$mount_cfg"
-  rm -f "$cfg"
+  write_config "$dtype" "$mount_cfg"
 
   echo "======== $label ($dtype) ========"
-  # Override restart mounts: copy patched config into place after run via env hack —
-  # reuse bench script but replace host config mount by swapping perception/config.yaml briefly.
   cp -f perception/config.yaml "$OUT/config.yaml.bak"
   cp -f "$mount_cfg" perception/config.yaml
+
+  set +e
   python3 deploy/bench_tts_peak_mem.py \
     --restart \
     --image "$IMAGE" \
@@ -59,28 +54,25 @@ run_one() {
     --label "$label" \
     --warmup 1 \
     --runs 3 \
-    --out-dir "$OUT" || true
+    --out-dir "$OUT"
+  local rc=$?
+  set -e
   mv -f "$OUT/config.yaml.bak" perception/config.yaml
+  if [[ $rc -ne 0 ]]; then
+    echo "WARN: bench $label failed rc=$rc" >&2
+    return 0
+  fi
 
   docker cp deploy/smaps_rss.py "$NAME":/tmp/smaps_rss.py
   docker exec -u 0 "$NAME" python3 /tmp/smaps_rss.py 1 | tee "$OUT/smaps_${label}.txt" >/dev/null
-  python3 - <<PY
-import json, re
+
+  python3 - "$OUT" "$label" "$SUMMARY" <<'PY'
+import json, sys
 from pathlib import Path
-d = json.loads(Path("$OUT/peak_mem_report_${label}.json").read_text())
+out, label, summary = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+d = json.loads((out / f"peak_mem_report_{label}.json").read_text())
 cur = (d.get("cgroup_after_infer_mib") or {}).get("current")
-text = Path("$OUT/smaps_${label}.txt").read_text()
-heap = anon = ""
-for line in text.splitlines():
-    if "MiB Rss |" in line and "| [heap]" in line:
-        heap = line.split()[0]
-    if line.strip().endswith("| [anon]") and "aggregated" not in line:
-        # aggregated line: "   754.9 MiB Rss | ..."
-        pass
-for line in text.splitlines():
-    if "MiB Rss |" in line and line.rstrip().endswith("| [anon]") and "Anon |" in line:
-        # skip per-mapping; use aggregated section
-        pass
+text = (out / f"smaps_{label}.txt").read_text()
 agg_heap = agg_anon = None
 in_agg = False
 for line in text.splitlines():
@@ -93,9 +85,15 @@ for line in text.splitlines():
         agg_heap = line.split()[0]
     if in_agg and line.rstrip().endswith("| [anon]"):
         agg_anon = line.split()[0]
-row = [d.get("label"), f"{d.get('avg_rtf'):.4f}", str(cur), str(agg_heap), str(agg_anon)]
+row = [
+    str(d.get("label")),
+    f"{d.get('avg_rtf'):.4f}" if d.get("avg_rtf") is not None else "",
+    str(cur),
+    str(agg_heap),
+    str(agg_anon),
+]
 print("\t".join(row))
-with open("$SUMMARY", "a") as f:
+with summary.open("a") as f:
     f.write("\t".join(row) + "\n")
 PY
 }
