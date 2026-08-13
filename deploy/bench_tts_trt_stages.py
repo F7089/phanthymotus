@@ -81,10 +81,16 @@ def _default_model(backend: str) -> Path:
         shaped = Path(
             os.environ.get("MELO_ONNX_TRT", "/tmp/melo_fp32_shaped.onnx")
         )
-        if shaped.is_file():
+        marker = Path(str(shaped) + ".ok")
+        if shaped.is_file() and marker.is_file():
             return shaped
-        # fall back; will likely fail with the known ConstantOfShape error
-        return Path(os.environ.get("MELO_ONNX", str(raw)))
+        raise SystemExit(
+            f"TRT requires shape-inferred ONNX + marker.\n"
+            f"  expected: {shaped}\n"
+            f"  marker:   {marker}\n"
+            f"Run deploy/bench_tts_trt_mem.sh (or shape_infer_melo_onnx.py) first.\n"
+            f"Do NOT pass the raw FP32 model to TensorRT EP."
+        )
     return Path(os.environ.get("MELO_ONNX", str(raw)))
 
 
