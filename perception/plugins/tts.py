@@ -55,7 +55,11 @@ def _process_rss_mb() -> float:
 
 
 def _piper_run(sess, ort_module, feeds):
-    """Run with GPU arena shrinkage after each call (best-effort)."""
+    """ORT session.run. Arena shrinkage is opt-in (hurts RTF on Jetson Melo)."""
+    import os
+
+    if os.environ.get("TTS_ORT_ARENA_SHRINK", "0") != "1":
+        return sess.run(None, feeds)
     try:
         run_options = ort_module.RunOptions()
         run_options.add_run_config_entry(
@@ -70,7 +74,8 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     """Return (onnxruntime module, provider list) for Piper InferenceSession.
 
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
-    Prefer RTF: cuDNN max workspace on; soft gpu_mem_limit=512MiB.
+    Prefer RTF: cuDNN max workspace; default no hard gpu_mem_limit (was 512MiB).
+    Set TTS_ORT_GPU_MEM_LIMIT_MB to re-enable a soft cap.
     """
     import os
 
@@ -79,13 +84,14 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     if hw_provider == "cuda":
         available = ort.get_available_providers()
         if "CUDAExecutionProvider" in available:
-            # RTF-oriented: workspace=1 + limit=512; sticky RAM via short warmup.
             cuda_opts = {
                 "device_id": 0,
-                "gpu_mem_limit": 512 * 1024 * 1024,
                 "cudnn_conv_use_max_workspace": "1",
                 "cudnn_conv_algo_search": "HEURISTIC",
             }
+            mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "").strip()
+            if mem_mb.isdigit() and int(mem_mb) > 0:
+                cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
             return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
         require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
         msg = (
@@ -385,12 +391,11 @@ def _resample_to_16k(samples, src_rate: int):
 
 
 def _float_samples_to_pcm16(samples) -> bytes:
-    import struct
+    import numpy as np
 
-    return struct.pack(
-        f"<{len(samples)}h",
-        *[int(max(-32768, min(32767, s * 32767))) for s in samples],
-    )
+    x = np.asarray(samples, dtype=np.float32)
+    x = np.clip(x * 32767.0, -32768, 32767).astype(np.int16)
+    return x.tobytes()
 
 
 class SherpaOnnxVitsTTSAdapter(TTSAdapter):
@@ -894,11 +899,17 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         )
 
     def _synthesize_segment(self, text: str) -> bytes:
+        import os
+        import time
+
         import numpy as np
         import re
 
         if not text or not text.strip():
             return b""
+        profile = os.environ.get("TTS_PROFILE", "0") == "1"
+        t0 = time.perf_counter() if profile else 0.0
+
         # Match Melo api.tts_to_file for ZH_MIX_EN
         t = text
         if self._language in ("EN", "ZH_MIX_EN"):
@@ -910,6 +921,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             add_blank=self._add_blank,
             language=self._language,
         )
+        t_g2p = time.perf_counter() if profile else 0.0
         if not phone_ids:
             return b""
 
@@ -925,8 +937,23 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         }
         audio = np.asarray(_piper_run(self._sess, self._ort, feed)[0]).squeeze()
         audio = audio.astype(np.float32)
+        t_ort = time.perf_counter() if profile else 0.0
         samples = _resample_to_16k(audio, self._model_sr)
-        return _float_samples_to_pcm16(samples)
+        pcm = _float_samples_to_pcm16(samples)
+        if profile:
+            t1 = time.perf_counter()
+            log.info(
+                "[tts] melo_profile text_chars=%d phones=%d "
+                "g2p=%.3fs ort=%.3fs post=%.3fs total=%.3fs providers=%s",
+                len(t),
+                len(phone_ids),
+                t_g2p - t0,
+                t_ort - t_g2p,
+                t1 - t_ort,
+                t1 - t0,
+                self._sess.get_providers(),
+            )
+        return pcm
 
 
 def _build_tts_adapter(cfg: dict) -> TTSAdapter:
