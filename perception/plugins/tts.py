@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-plugins/tts.py — TTSPlugin: sherpa-onnx VITS TTS.
+plugins/tts.py — TTSPlugin: sherpa-onnx offline TTS (VITS / Kokoro / Matcha).
 
-On-device text-to-speech using sherpa-onnx MeloTTS (Chinese + English).
+Backend selected via config (vits / kokoro / matcha).
 """
 
 from __future__ import annotations
@@ -23,11 +23,152 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 CHUNK_BYTES = 3200  # 100ms @ 16kHz 16-bit mono
+MAX_SEGMENT_CHARS = 60
+# Local synthesis buffer. 600 frames is about 60 seconds / 1.9 MB of PCM.
+# It lets the producer synthesize the next sentence while the current one plays.
+SYNTH_QUEUE_FRAMES = 600
 
-# EOF magic: 8 bytes (4 samples [1, -1, 1, -1])，标记 utterance 结束
-# 正常 chunk 始终 3200 bytes，8 bytes 短 chunk 不会被误判
-# 即使被不识别 EOF 的旧 Speaker 播放，也只是 0.25ms 极微弱交流声
-AUDIO_EOF_MAGIC = b'\x01\x00\xff\xff\x01\x00\xff\xff'
+
+def _maybe_set_cpu_affinity() -> None:
+    """Optional CPU pinning for Jetson benchmarks (TTS_CPU_AFFINITY=0,1,2,3)."""
+    import os
+
+    if not hasattr(os, "sched_setaffinity"):
+        return
+    spec = os.environ.get("TTS_CPU_AFFINITY", "").strip()
+    if not spec:
+        return
+    cores = {int(x.strip()) for x in spec.split(",") if x.strip()}
+    if cores:
+        os.sched_setaffinity(0, cores)
+        log.info(f"[tts] CPU affinity set to {sorted(cores)}")
+
+
+def _process_rss_mb() -> float:
+    """Current process RSS in MB (for Jetson memory benchmarking)."""
+    import os
+
+    import psutil
+
+    return psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
+
+
+
+def _piper_run(sess, ort_module, feeds):
+    """Run with GPU arena shrinkage after each call (best-effort)."""
+    try:
+        run_options = ort_module.RunOptions()
+        run_options.add_run_config_entry(
+            "memory.enable_memory_arena_shrinkage", "gpu:0"
+        )
+        return sess.run(None, feeds, run_options)
+    except Exception:
+        return sess.run(None, feeds)
+
+
+def _piper_ort_providers(hw_provider: str) -> tuple:
+    """Return (onnxruntime module, provider list) for Piper InferenceSession.
+
+    Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
+    Prefer RTF: cuDNN max workspace on; soft gpu_mem_limit=512MiB.
+    """
+    import os
+
+    import onnxruntime as ort
+
+    if hw_provider == "cuda":
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" in available:
+            # RTF-oriented: workspace=1 + limit=512; sticky RAM via short warmup.
+            cuda_opts = {
+                "device_id": 0,
+                "gpu_mem_limit": 512 * 1024 * 1024,
+                "cudnn_conv_use_max_workspace": "1",
+                "cudnn_conv_algo_search": "HEURISTIC",
+            }
+            return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
+        require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+        msg = (
+            "[tts] piper: CUDA requested but CUDAExecutionProvider missing; "
+            f"available={available}"
+        )
+        if require:
+            raise RuntimeError(
+                msg
+                + " (TTS_REQUIRE_CUDA=1). Rebuild with JuiceFS onnxruntime-gpu "
+                "(see Dockerfile.jetson)."
+            )
+        log.warning(msg + "; using CPU")
+    return ort, ["CPUExecutionProvider"]
+
+
+_maybe_set_cpu_affinity()
+
+# US English letter NAMES (not article/pronoun). Merged into product lexicon so
+# ALLCAPS split (AI→A I) does not hit cmudict word readings (a→/ə/, I→pronoun).
+_LETTER_NAME_ARPABET: dict[str, list[str]] = {
+    "a": ["EY1"],
+    "b": ["B", "IY1"],
+    "c": ["S", "IY1"],
+    "d": ["D", "IY1"],
+    "e": ["IY1"],
+    "f": ["EH1", "F"],
+    "g": ["JH", "IY1"],
+    "h": ["EY1", "CH"],
+    "i": ["AY1"],
+    "j": ["JH", "EY1"],
+    "k": ["K", "EY1"],
+    "l": ["EH1", "L"],
+    "m": ["EH1", "M"],
+    "n": ["EH1", "N"],
+    "o": ["OW1"],
+    "p": ["P", "IY1"],
+    "q": ["K", "Y", "UW1"],
+    "r": ["AA1", "R"],
+    "s": ["EH1", "S"],
+    "t": ["T", "IY1"],
+    "u": ["Y", "UW1"],
+    "v": ["V", "IY1"],
+    "w": ["D", "AH1", "B", "AH0", "L", "Y", "UW0"],
+    "x": ["EH1", "K", "S"],
+    "y": ["W", "AY1"],
+    "z": ["Z", "IY1"],
+}
+
+
+def _merge_letter_name_lexicon(lexicon: dict) -> dict:
+    """Ensure a–z letter-name ARPAbet entries win over cmudict word readings."""
+    out = dict(lexicon or {})
+    for k, v in _LETTER_NAME_ARPABET.items():
+        out[k] = list(v)
+    return out
+
+
+_STRONG_SENTENCE_END = frozenset("。！？!?；;")
+_WEAK_SENTENCE_END = frozenset("，,、：:")
+_CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
+
+_tn_normalizer = None  # legacy; normalization via utils.tts_text_frontend
+
+
+def _normalize_tts_text(text: str) -> str:
+    """Acronym expand + lead text_process (numbers/units) + WeText."""
+    if not text or not text.strip():
+        return text
+    try:
+        from utils.tts_text_frontend import normalize_for_tts
+
+        return normalize_for_tts(
+            text,
+            expand_acronyms=True,
+            use_text_process=True,
+            use_wetext=True,
+            language="zh",
+        )
+    except Exception as e:
+        log.warning(f"[tts] text normalization skipped: {e}")
+        return text
+
 
 _LOW_LAT_QOS = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -47,7 +188,7 @@ TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "stop", "speak", "info", "config", "interrupt"],
+                    "enum": ["start", "stop", "speak", "info", "config"],
                     "description": "Action to perform"
                 },
                 "input_topic": {
@@ -59,14 +200,7 @@ TOOLS = [
                     "description": "Text to synthesize (required for action=speak)"
                 },
             },
-            "required": ["action"],
-            "x-completion": {
-                "actions": ["speak"],
-                "timeout": 60
-            },
-            "x-hooks": {
-                "on_interrupt_speak": {"action": "interrupt"},
-            }
+            "required": ["action"]
         },
         "configSchema": {
             "type": "object",
@@ -84,13 +218,342 @@ TOOLS = [
 
 # ── TTS Adapter ──────────────────────────────────────────────────────────────
 
+
+def _is_cjk(char: str) -> bool:
+    """Return True for common CJK code-point ranges."""
+    if not char:
+        return False
+    code = ord(char)
+    return (
+        0x3400 <= code <= 0x4DBF
+        or 0x4E00 <= code <= 0x9FFF
+        or 0xF900 <= code <= 0xFAFF
+    )
+
+
+def _split_long_segment(segment: str, max_chars: int) -> list[str]:
+    """Split an unusually long sentence at weak punctuation or whitespace."""
+    if max_chars <= 0 or len(segment) <= max_chars:
+        return [segment]
+
+    parts: list[str] = []
+    remaining = segment
+    min_cut = max(1, max_chars // 2)
+
+    while len(remaining) > max_chars:
+        cut = -1
+
+        # Prefer a comma/colon-like boundary near the maximum length.
+        for index in range(max_chars - 1, min_cut - 1, -1):
+            if remaining[index] in _WEAK_SENTENCE_END:
+                cut = index + 1
+                break
+
+        # For English text, prefer a whitespace boundary rather than
+        # splitting through the middle of a word.
+        if cut < 0:
+            space_index = remaining.rfind(" ", min_cut, max_chars + 1)
+            if space_index >= 0:
+                cut = space_index + 1
+
+        if cut < 0:
+            cut = max_chars
+
+        part = remaining[:cut].strip()
+        if part:
+            parts.append(part)
+        remaining = remaining[cut:].strip()
+
+    if remaining:
+        parts.append(remaining)
+    return parts
+
+
+def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[str]:
+    """Split text into TTS-friendly sentences while retaining punctuation.
+
+    Primary boundaries are Chinese/English sentence-ending punctuation and
+    newlines. English full stops are kept inside decimal numbers. A very long
+    sentence is split again at comma/colon-like punctuation or whitespace.
+    """
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return []
+
+    segments: list[str] = []
+    current: list[str] = []
+    text_len = len(normalized)
+    index = 0
+
+    while index < text_len:
+        char = normalized[index]
+        current.append(char)
+        is_boundary = char == "\n" or char in _STRONG_SENTENCE_END
+
+        if char == ".":
+            previous = normalized[index - 1] if index > 0 else ""
+            following = normalized[index + 1] if index + 1 < text_len else ""
+            is_decimal = previous.isdigit() and following.isdigit()
+            # Avoid splitting 3.14, but support both "Hello. Next" and
+            # mixed text such as "Hello.下一句".
+            is_boundary = not is_decimal and (
+                not following
+                or following.isspace()
+                or following in _CLOSING_PUNCTUATION
+                or _is_cjk(following)
+            )
+
+        if is_boundary:
+            # Keep closing quotes/brackets with the sentence-ending mark.
+            next_index = index + 1
+            while (
+                next_index < text_len
+                and normalized[next_index] in _CLOSING_PUNCTUATION
+            ):
+                current.append(normalized[next_index])
+                next_index += 1
+            index = next_index - 1
+
+            sentence = "".join(current).strip()
+            if sentence:
+                segments.extend(_split_long_segment(sentence, max_chars))
+            current = []
+
+        index += 1
+
+    tail = "".join(current).strip()
+    if tail:
+        segments.extend(_split_long_segment(tail, max_chars))
+
+    return segments
+
+
+def _strip_sentence_punct(segment: str) -> str:
+    """After split: replace sentence-end marks with spaces; keep commas."""
+    import re
+
+    if not segment:
+        return segment
+    out = re.sub(r"[。．\.！!？\?；;]+", " ", segment)
+    return re.sub(r"\s+", " ", out).strip()
+
+
 class TTSAdapter(ABC):
     @abstractmethod
-    def synthesize(self, text: str) -> bytes: ...
+    def _synthesize_segment(self, text: str) -> bytes: ...
+
+    def split_text(self, text: str) -> list[str]:
+        if getattr(self, "text_normalize", True):
+            text = _normalize_tts_text(text)
+        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
+        return _split_text_for_tts(text, max_chars)
+
+    def synthesize(self, text: str) -> bytes:
+        """Synthesize all segments and return one concatenated PCM stream."""
+        return b"".join(self.synthesize_stream(text))
 
     def synthesize_stream(self, text: str):
-        """Yield raw PCM bytes as they arrive. Default: collect all."""
-        yield self.synthesize(text)
+        """Yield concatenated PCM chunks, synthesized one sentence at a time."""
+        yield from self.synthesize_segments_stream(self.split_text(text))
+
+    def synthesize_segments_stream(self, segments: list[str]):
+        """Synthesize pre-split segments and yield one continuous PCM stream."""
+        buffer = b""
+        for segment in segments:
+            spoken = _strip_sentence_punct(segment)
+            if not spoken:
+                continue
+            buffer += self._synthesize_segment(spoken)
+            while len(buffer) >= CHUNK_BYTES:
+                yield buffer[:CHUNK_BYTES]
+                buffer = buffer[CHUNK_BYTES:]
+        if buffer:
+            yield buffer
+
+
+def _resample_to_16k(samples, src_rate: int):
+    """Resample float PCM to 16 kHz for audio/pcm-16k output."""
+    if src_rate == SAMPLE_RATE:
+        return samples
+    from math import gcd
+
+    import numpy as np
+    from scipy.signal import resample_poly
+
+    g = gcd(src_rate, SAMPLE_RATE)
+    return resample_poly(np.asarray(samples, dtype=np.float32), SAMPLE_RATE // g, src_rate // g)
+
+
+def _float_samples_to_pcm16(samples) -> bytes:
+    import struct
+
+    return struct.pack(
+        f"<{len(samples)}h",
+        *[int(max(-32768, min(32767, s * 32767))) for s in samples],
+    )
+
+
+class SherpaOnnxVitsTTSAdapter(TTSAdapter):
+    """On-device TTS using sherpa-onnx VITS (e.g. vits-melo-tts-zh_en-8k)."""
+
+    def __init__(self, model_dir: str, speaker_id: int = 0, speed: float = 1.0,
+                 model_name: str = "tts_melo_8k", hw_provider: str = "cpu",
+                 num_threads: int = 4):
+        import os
+        from utils.model_downloader import ensure_model
+
+        ensure_model(model_name, model_dir)
+
+        import sherpa_onnx
+
+        mem_before = _process_rss_mb()
+        model_path = os.path.join(model_dir, "model.onnx")
+        model_size_mb = os.path.getsize(model_path) / (1024 * 1024) if os.path.exists(model_path) else 0.0
+        tokens_path = os.path.join(model_dir, "tokens.txt")
+        espeak_data_dir = os.path.join(model_dir, "espeak-ng-data")
+        lexicon_path = os.path.join(model_dir, "lexicon.txt")
+        dict_dir = os.path.join(model_dir, "dict")
+
+        use_espeak = os.path.isdir(espeak_data_dir)
+
+        rule_fsts = []
+        for name in ("date.fst", "number.fst", "phone.fst"):
+            p = os.path.join(model_dir, name)
+            if os.path.exists(p):
+                rule_fsts.append(p)
+
+        tts_config = sherpa_onnx.OfflineTtsConfig(
+            model=sherpa_onnx.OfflineTtsModelConfig(
+                vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                    model=model_path,
+                    tokens=tokens_path,
+                    lexicon="" if use_espeak else (lexicon_path if os.path.exists(lexicon_path) else ""),
+                    dict_dir="" if use_espeak else (dict_dir if os.path.isdir(dict_dir) else ""),
+                    data_dir=espeak_data_dir if use_espeak else "",
+                    length_scale=1.0 / speed if speed else 1.0,
+                ),
+                num_threads=num_threads,
+                provider=hw_provider,
+            ),
+            rule_fsts=",".join(rule_fsts) if rule_fsts else "",
+        )
+        self._tts = sherpa_onnx.OfflineTts(tts_config)
+        self._sid = speaker_id
+        self._speed = speed
+        self._model_sr = self._tts.sample_rate
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        mode = "espeak" if use_espeak else "lexicon"
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] sherpa-onnx VITS loaded: model_dir={model_dir}, mode={mode}, "
+            f"sample_rate={self._model_sr}, model_size_mb={model_size_mb:.1f}, "
+            f"speaker_id={speaker_id}, speed={speed}, "
+            f"provider={hw_provider}, num_threads={num_threads}, "
+            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
+        samples = _resample_to_16k(audio.samples, self._model_sr)
+        return _float_samples_to_pcm16(samples)
+
+
+def _resolve_kokoro_model_path(model_dir: str) -> tuple[str, float]:
+    """Return (onnx path, size_mb). Prefer model.onnx, else model.int8.onnx."""
+    import os
+
+    for name in ("model.onnx", "model.int8.onnx"):
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            return path, size_mb
+    raise FileNotFoundError(
+        f"no Kokoro model.onnx under {model_dir} (expected model.onnx or model.int8.onnx)"
+    )
+
+
+def _kokoro_lexicon_csv(model_dir: str) -> str:
+    import os
+
+    parts = []
+    for name in (
+        "lexicon-us-en.txt",
+        "lexicon-gb-en.txt",
+        "lexicon-zh.txt",
+    ):
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            parts.append(path)
+    return ",".join(parts)
+
+
+class SherpaOnnxKokoroTTSAdapter(TTSAdapter):
+    """On-device TTS using sherpa-onnx Kokoro (e.g. kokoro-int8-multi-lang-v1_1)."""
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 45,
+        speed: float = 1.0,
+        model_name: str = "tts_kokoro_int8",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+    ):
+        import os
+        from utils.model_downloader import ensure_model
+
+        ensure_model(model_name, model_dir)
+
+        import sherpa_onnx
+
+        mem_before = _process_rss_mb()
+        model_path, model_size_mb = _resolve_kokoro_model_path(model_dir)
+        voices_path = os.path.join(model_dir, "voices.bin")
+        tokens_path = os.path.join(model_dir, "tokens.txt")
+        data_dir = os.path.join(model_dir, "espeak-ng-data")
+        if not os.path.isdir(data_dir):
+            data_dir = ""
+
+        rule_fsts = []
+        for name in ("date-zh.fst", "number-zh.fst", "phone-zh.fst"):
+            p = os.path.join(model_dir, name)
+            if os.path.exists(p):
+                rule_fsts.append(p)
+
+        length_scale = 1.0 / speed if speed else 1.0
+        tts_config = sherpa_onnx.OfflineTtsConfig(
+            model=sherpa_onnx.OfflineTtsModelConfig(
+                kokoro=sherpa_onnx.OfflineTtsKokoroModelConfig(
+                    model=model_path,
+                    voices=voices_path,
+                    tokens=tokens_path,
+                    data_dir=data_dir,
+                    lexicon=_kokoro_lexicon_csv(model_dir),
+                    length_scale=length_scale,
+                ),
+                num_threads=num_threads,
+                provider=hw_provider,
+            ),
+            rule_fsts=",".join(rule_fsts) if rule_fsts else "",
+        )
+        self._tts = sherpa_onnx.OfflineTts(tts_config)
+        self._sid = speaker_id
+        self._speed = speed
+        self._model_sr = self._tts.sample_rate
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] sherpa-onnx Kokoro loaded: model_dir={model_dir}, "
+            f"model={os.path.basename(model_path)}, sample_rate={self._model_sr}, "
+            f"model_size_mb={model_size_mb:.1f}, speaker_id={speaker_id}, speed={speed}, "
+            f"provider={hw_provider}, num_threads={num_threads}, "
+            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
+        samples = _resample_to_16k(audio.samples, self._model_sr)
+        return _float_samples_to_pcm16(samples)
 
 
 class SherpaOnnxTTSAdapter(TTSAdapter):
@@ -140,47 +603,408 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         log.info(f"[tts] sherpa-onnx Matcha loaded: model_dir={model_dir}, "
                  f"speaker_id={speaker_id}, speed={speed}")
 
-    def synthesize(self, text: str) -> bytes:
-        return b''.join(self.synthesize_stream(text))
-
-    def synthesize_stream(self, text: str):
-        import struct
+    def _synthesize_segment(self, text: str) -> bytes:
         audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
-        float_samples = audio.samples
-        # Matcha + vocos-16khz outputs 16kHz directly, no resampling needed
-        pcm = struct.pack(f'<{len(float_samples)}h',
-                         *[int(max(-32768, min(32767, s * 32767))) for s in float_samples])
-        for i in range(0, len(pcm), CHUNK_BYTES):
-            yield pcm[i:i + CHUNK_BYTES]
+        samples = _resample_to_16k(audio.samples, self._tts.sample_rate)
+        return _float_samples_to_pcm16(samples)
 
 
+class PiperDualG2PTTSAdapter(TTSAdapter):
+    """Piper-plus MB-iSTFT ONNX + dual ZH/EN frontend (package under model_dir).
+
+    Expected files in model_dir (from piper-longanlingxin-b2.tar.bz2):
+      model.onnx, model.onnx.json, product_lexicon_arpabet.json,
+      dual_zh_en_frontend.py, vendor/g2p/piper_plus_g2p/
+    """
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 0.85,
+        model_name: str = "tts_piper_b2",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+        noise_scale: float = 0.667,
+        noise_scale_w: float = 0.8,
+    ):
+        import os
+        import sys
+        from utils.model_downloader import ensure_model
+
+        ensure_model(model_name, model_dir)
+
+        mem_before = _process_rss_mb()
+        model_path = os.path.join(model_dir, "model.onnx")
+        config_path = os.path.join(model_dir, "model.onnx.json")
+        if not os.path.isfile(config_path):
+            alt = os.path.join(model_dir, "config.json")
+            config_path = alt if os.path.isfile(alt) else config_path
+        lexicon_path = os.path.join(model_dir, "product_lexicon_arpabet.json")
+        frontend_py = os.path.join(model_dir, "dual_zh_en_frontend.py")
+        vendor_g2p = os.path.join(model_dir, "vendor", "g2p")
+
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"missing {model_path}")
+        if not os.path.isfile(config_path):
+            raise FileNotFoundError(f"missing {config_path}")
+        if not os.path.isfile(frontend_py):
+            raise FileNotFoundError(f"missing {frontend_py}")
+
+        # Prefer package-local G2P + frontend (self-contained tar).
+        # Must use a normal import (or register in sys.modules before
+        # exec_module): dual_zh_en_frontend defines @dataclass types, and
+        # dataclasses looks up cls.__module__ in sys.modules — missing entry
+        # → AttributeError: 'NoneType' object has no attribute '__dict__'.
+        if os.path.isdir(vendor_g2p):
+            sys.path.insert(0, vendor_g2p)
+        if model_dir not in sys.path:
+            sys.path.insert(0, model_dir)
+
+        import json
+        import importlib
+        from pathlib import Path
+
+        # Drop a stale module so config-rebuild / multi-instance reloads pick
+        # up the package under model_dir (not a previous path).
+        sys.modules.pop("dual_zh_en_frontend", None)
+        frontend = importlib.import_module("dual_zh_en_frontend")
+
+        self._encode_utterance = frontend.encode_utterance
+        self._language_id_for_utterance = frontend.language_id_for_utterance
+        self._load_arpabet_lexicon = frontend.load_arpabet_lexicon
+        # Cache phonemizers: EnglishPhonemizer/G2p init is expensive per call.
+        self._zh_ph = frontend.ChinesePhonemizer()
+        self._en_ph = frontend.EnglishPhonemizer()
+
+        with open(config_path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        self._id_map = {
+            k: ([int(x) for x in v] if isinstance(v, list) else [int(v)])
+            for k, v in cfg["phoneme_id_map"].items()
+        }
+        # load_arpabet_lexicon expects pathlib.Path (uses .is_file/.read_text).
+        lex_arg = Path(lexicon_path) if os.path.isfile(lexicon_path) else None
+        self._lexicon = _merge_letter_name_lexicon(self._load_arpabet_lexicon(lex_arg))
+        self._model_sr = int((cfg.get("audio") or {}).get("sample_rate") or 22050)
+
+        ort, providers = _piper_ort_providers(hw_provider)
+        so = ort.SessionOptions()
+        # Mild RAM save; avoid arena/spinning clamps that hurt RTF.
+        so.enable_cpu_mem_arena = False
+        so.intra_op_num_threads = max(1, int(num_threads))
+        so.inter_op_num_threads = 1
+        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        self._sess = ort.InferenceSession(
+            model_path, sess_options=so, providers=providers
+        )
+        active = self._sess.get_providers()
+        if hw_provider == "cuda" and "CUDAExecutionProvider" not in active:
+            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+            msg = f"[tts] piper: session providers={active} (wanted CUDA)"
+            if require:
+                raise RuntimeError(msg)
+            log.warning(msg)
+        log.info(
+            f"[tts] piper ORT providers={active} "
+            f"(RTF: workspace=1, limit=512)"
+        )
+        self._input_names = {i.name for i in self._sess.get_inputs()}
+        self._sid = int(speaker_id)
+        self._speed = float(speed) if speed else 1.0
+        self._noise_scale = float(noise_scale)
+        self._noise_scale_w = float(noise_scale_w)
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] piper dual-G2P loaded: model_dir={model_dir}, "
+            f"model_size_mb={model_size_mb:.1f}, sr={self._model_sr}, "
+            f"speed={self._speed}, providers={active}, "
+            f"lexicon_size={len(self._lexicon)}, "
+            f"rss_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        import numpy as np
+
+        if not text or not text.strip():
+            return b""
+        length_scale = 1.0 / self._speed if self._speed else 1.0
+        _tok, phoneme_ids, prosody_dicts, _plan = self._encode_utterance(
+            text,
+            self._id_map,
+            lexicon=self._lexicon,
+            zh_ph=self._zh_ph,
+            en_ph=self._en_ph,
+        )
+        lid = int(self._language_id_for_utterance(text))
+        feed = {
+            "input": np.array([phoneme_ids], dtype=np.int64),
+            "input_lengths": np.array([len(phoneme_ids)], dtype=np.int64),
+            "scales": np.array(
+                [self._noise_scale, length_scale, self._noise_scale_w],
+                dtype=np.float32,
+            ),
+        }
+        if "lid" in self._input_names:
+            feed["lid"] = np.array([lid], dtype=np.int64)
+        if "sid" in self._input_names:
+            feed["sid"] = np.array([self._sid], dtype=np.int64)
+        if "prosody_features" in self._input_names:
+            rows = []
+            for pf in prosody_dicts:
+                if pf is None:
+                    rows.append([0, 0, 0])
+                else:
+                    rows.append(
+                        [
+                            int(pf.get("a1", 0)),
+                            int(pf.get("a2", 0)),
+                            int(pf.get("a3", 0)),
+                        ]
+                    )
+            feed["prosody_features"] = np.expand_dims(
+                np.array(rows, dtype=np.int64), 0
+            )
+        if "speaker_embedding" in self._input_names:
+            emb_dim = 256
+            for inp in self._sess.get_inputs():
+                if inp.name == "speaker_embedding" and len(inp.shape) >= 2:
+                    if isinstance(inp.shape[1], int):
+                        emb_dim = inp.shape[1]
+            feed["speaker_embedding"] = np.zeros((1, emb_dim), dtype=np.float32)
+            feed["speaker_embedding_mask"] = np.array([[0]], dtype=np.int64)
+
+        audio = np.asarray(
+            _piper_run(self._sess, __import__("onnxruntime"), feed)[0]
+        ).squeeze().astype(np.float32)
+        samples = _resample_to_16k(audio, self._model_sr)
+        return _float_samples_to_pcm16(samples)
+
+
+class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
+    """Melo ONNX via ORT + separately downloaded OpenEPD / ZH_MIX_EN G2P.
+
+    JuiceFS (see melo_training/lib/pack_jetson_melo_openepd.py):
+      - voice tar: model.onnx (+ tiny model_meta.json) only
+      - assets tar melo-openepd-g2p-assets: openepd pickle + vendor/melo_g2p + symbols
+    """
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 0.9,
+        model_name: str = "tts_melo_openepd_int8",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+        noise_scale: float = 0.6,
+        noise_scale_w: float = 0.8,
+        g2p_model_name: str = "tts_melo_openepd_g2p",
+        g2p_dir: str = "/models/melo-openepd-g2p-assets",
+    ):
+        import json
+        import os
+        import sys
+        from utils.model_downloader import ensure_model
+
+        # 1) shared OpenEPD + G2P  2) voice ONNX
+        ensure_model(g2p_model_name, g2p_dir)
+        ensure_model(model_name, model_dir)
+        mem_before = _process_rss_mb()
+
+        model_path = os.path.join(model_dir, "model.onnx")
+        openepd = os.path.join(g2p_dir, "openepd_eng_dict.pickle")
+        cfg_path = os.path.join(g2p_dir, "config.json")
+        vendor = os.path.join(g2p_dir, "vendor")
+        g2p_root = os.path.join(vendor, "melo_g2p")
+
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(model_path)
+        if not os.path.isfile(cfg_path):
+            raise FileNotFoundError(cfg_path)
+        if not os.path.isfile(openepd):
+            raise FileNotFoundError(openepd)
+        if not os.path.isdir(g2p_root):
+            raise FileNotFoundError(g2p_root)
+
+        os.environ["MELO_OPENEPD_DICT"] = openepd
+        os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+        if vendor not in sys.path:
+            sys.path.insert(0, vendor)
+        for key in list(sys.modules):
+            if key == "melo_g2p" or key.startswith("melo_g2p."):
+                sys.modules.pop(key, None)
+
+        import melo_g2p  # noqa: F401
+        from melo_g2p.encode import encode_phones_tones
+
+        with open(cfg_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        self._symbols = list(meta.get("symbols") or [])
+        if not self._symbols:
+            raise RuntimeError(f"g2p config.json missing symbols: {cfg_path}")
+        self._add_blank = bool(meta.get("add_blank", True))
+        self._language = str(meta.get("language") or "ZH_MIX_EN")
+        self._model_sr = int(meta.get("sample_rate") or 44100)
+        voice_meta_path = os.path.join(model_dir, "model_meta.json")
+        if os.path.isfile(voice_meta_path):
+            with open(voice_meta_path, encoding="utf-8") as f:
+                vmeta = json.load(f)
+            self._model_sr = int(vmeta.get("sample_rate") or self._model_sr)
+            if speaker_id == 0 and "speaker_id" in vmeta:
+                speaker_id = int(vmeta["speaker_id"])
+
+        self._encode = encode_phones_tones
+        self._sid = int(speaker_id)
+        self._speed = float(speed) if speed else 1.0
+        self._noise_scale = float(noise_scale)
+        self._noise_scale_w = float(noise_scale_w)
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+
+        ort, providers = _piper_ort_providers(hw_provider)
+        so = ort.SessionOptions()
+        so.enable_cpu_mem_arena = False
+        so.intra_op_num_threads = max(1, int(num_threads))
+        so.inter_op_num_threads = 1
+        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        self._sess = ort.InferenceSession(
+            model_path, sess_options=so, providers=providers
+        )
+        self._ort = ort
+        active = self._sess.get_providers()
+        if hw_provider == "cuda" and "CUDAExecutionProvider" not in active:
+            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+            msg = f"[tts] melo_openepd: providers={active} (wanted CUDA)"
+            if require:
+                raise RuntimeError(msg)
+            log.warning(msg)
+
+        model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] melo_openepd ORT loaded: model_dir={model_dir}, "
+            f"g2p_dir={g2p_dir}, model_size_mb={model_size_mb:.1f}, "
+            f"sr={self._model_sr}, openepd={openepd}, language={self._language}, "
+            f"providers={active}, rss_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        import numpy as np
+        import re
+
+        if not text or not text.strip():
+            return b""
+        # Match Melo api.tts_to_file for ZH_MIX_EN
+        t = text
+        if self._language in ("EN", "ZH_MIX_EN"):
+            t = re.sub(r"([a-z])([A-Z])", r"\1 \2", t)
+
+        phone_ids, tone_ids = self._encode(
+            t,
+            self._symbols,
+            add_blank=self._add_blank,
+            language=self._language,
+        )
+        if not phone_ids:
+            return b""
+
+        length_scale = 1.0 / self._speed if self._speed else 1.0
+        feed = {
+            "x": np.array([phone_ids], dtype=np.int64),
+            "x_lengths": np.array([len(phone_ids)], dtype=np.int64),
+            "tones": np.array([tone_ids], dtype=np.int64),
+            "sid": np.array([self._sid], dtype=np.int64),
+            "noise_scale": np.array([self._noise_scale], dtype=np.float32),
+            "length_scale": np.array([length_scale], dtype=np.float32),
+            "noise_scale_w": np.array([self._noise_scale_w], dtype=np.float32),
+        }
+        audio = np.asarray(_piper_run(self._sess, self._ort, feed)[0]).squeeze()
+        audio = audio.astype(np.float32)
+        samples = _resample_to_16k(audio, self._model_sr)
+        return _float_samples_to_pcm16(samples)
 
 
 def _build_tts_adapter(cfg: dict) -> TTSAdapter:
-    import os
-    model_dir = cfg.get('model_dir', '/models/sherpa-onnx/tts')
-    speaker_id = int(cfg.get('speaker_id', 0))
-    speed = float(cfg.get('speed', 1.0))
-    return SherpaOnnxTTSAdapter(model_dir, speaker_id, speed)
+    model_dir = cfg.get("model_dir", "/models/sherpa-onnx/tts")
+    speaker_id = int(cfg.get("speaker_id", 0))
+    speed = float(cfg.get("speed", 1.0))
+    backend = cfg.get("backend", "vits")
+    if backend == "piper":
+        adapter = PiperDualG2PTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_piper_b2"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+            noise_scale=float(cfg.get("noise_scale", 0.667)),
+            noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
+        )
+    elif backend == "melo_openepd":
+        adapter = MeloOpenEpdOrtTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_melo_openepd_int8"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+            noise_scale=float(cfg.get("noise_scale", 0.6)),
+            noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
+            g2p_model_name=cfg.get("g2p_model_name", "tts_melo_openepd_g2p"),
+            g2p_dir=cfg.get("g2p_dir", "/models/melo-openepd-g2p-assets"),
+        )
+    elif backend == "kokoro":
+        adapter = SherpaOnnxKokoroTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_kokoro_int8"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+        )
+    elif backend == "vits":
+        adapter = SherpaOnnxVitsTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_melo_8k"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+        )
+    else:
+        adapter = SherpaOnnxTTSAdapter(model_dir, speaker_id, speed)
+    adapter.max_segment_chars = int(cfg.get("max_segment_chars", MAX_SEGMENT_CHARS))
+    adapter.text_normalize = bool(cfg.get("text_normalize", True))
+    return adapter
 
 
 # ── ROS2 Node ─────────────────────────────────────────────────────────────────
 
 class _TTSNode(Node):
-    def __init__(self, input_topic: Optional[str], adapter: Optional[TTSAdapter], node_suffix: str = ''):
+    def __init__(
+        self,
+        input_topic: Optional[str],
+        adapter: Optional[TTSAdapter],
+        node_suffix: str = '',
+        realtime_pacing: bool = False,
+    ):
         node_name = f"tts_{node_suffix}" if node_suffix else "tts"
         super().__init__(node_name)
         self._input_topic  = input_topic or ''
         self._output_topic = f"{input_topic}/tts" if input_topic else '/perception/tts'
         self._adapter      = adapter
+        self._realtime_pacing = realtime_pacing
         self.state         = "idle"
         self._text_queue   = queue.Queue()
         self._worker_thread: Optional[threading.Thread] = None
         self._stop_event   = threading.Event()
-        self._interrupt_flag = threading.Event()  # 打断标志：设置后立即停止当前 utterance
         from audio_msgs.msg import AudioChunk
         self._pub = self.create_publisher(AudioChunk, self._output_topic, _LOW_LAT_QOS)
-        self._perf_pub = self.create_publisher(String, '/perception/perf_spans', _LOW_LAT_QOS)
         if input_topic:
             self._sub = self.create_subscription(String, self._input_topic, self._text_cb, _LOW_LAT_QOS)
         else:
@@ -195,13 +1019,6 @@ class _TTSNode(Node):
             return self._status_dict()
         if not self._adapter:
             raise RuntimeError("TTS adapter not configured")
-        # Dry-run: verify model can synthesize before declaring running
-        try:
-            test_chunks = list(self._adapter.synthesize_stream("."))
-            if not test_chunks:
-                return {"state": "error", "message": "TTS dry-run produced no audio"}
-        except Exception as e:
-            return {"state": "error", "message": f"TTS dry-run failed: {e}"}
         self._stop_event.clear()
         self._worker_thread = threading.Thread(target=self._worker, daemon=True)
         self._worker_thread.start()
@@ -215,53 +1032,26 @@ class _TTSNode(Node):
         self.state = "idle"
         return {"state": "idle"}
 
-    def interrupt(self) -> dict:
-        """立即中止当前播放：清空队列 + 设置 interrupt flag 让 worker 停止当前 utterance。"""
-        # 清空待播放队列
-        cleared = 0
-        while not self._text_queue.empty():
-            try:
-                self._text_queue.get_nowait()
-                cleared += 1
-            except queue.Empty:
-                break
-        # 设置 interrupt flag（worker 在每个 frame 前检查）
-        self._interrupt_flag.set()
-        log.info(f"[tts] interrupted: cleared {cleared} queued item(s)")
-        return {"status": "interrupted", "cleared": cleared}
-
-    def enqueue(self, text: str, trace_id: str = '', action_id: str = ''):
+    def enqueue(self, text: str):
         if self.state != "running":
             raise RuntimeError("TTS not running; call start first")
-        # 分段：超过 280 字按标点切分，避免超长合成导致延迟或失败
-        segments = self._split_text(text, max_chars=280)
-        if len(segments) <= 1:
-            self._text_queue.put((text, trace_id, action_id))
-        else:
-            # 只有最后一段带 action_id（触发 ACP callback）
-            for i, seg in enumerate(segments):
-                is_last = (i == len(segments) - 1)
-                self._text_queue.put((seg, trace_id, action_id if is_last else ''))
-            log.info(f"[tts] split {len(text)} chars into {len(segments)} segments")
+        self._text_queue.put(text)
 
-    @staticmethod
-    def _split_text(text: str, max_chars: int = 280) -> list:
-        """按标点分段，每段不超过 max_chars 字。"""
-        import re as _re
-        sentences = _re.split(r'(?<=[。！？；\n])', text)
-        segments = []
-        current = ""
-        for sent in sentences:
-            if not sent:
-                continue
-            if len(current) + len(sent) > max_chars and current:
-                segments.append(current)
-                current = sent
-            else:
-                current += sent
-        if current:
-            segments.append(current)
-        return segments if segments else [text]
+    def _publish_frame(self, frame: bytes, frames_sent: int, t0: Optional[float], frame_duration: float):
+        from audio_msgs.msg import AudioChunk
+        import time as _time
+
+        if self._realtime_pacing and t0 is not None:
+            target = t0 + frames_sent * frame_duration
+            now = _time.monotonic()
+            if now < target:
+                _time.sleep(target - now)
+        msg = AudioChunk()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.format = "audio/pcm-16k"
+        msg.data = list(frame)
+        self._pub.publish(msg)
+        return frames_sent + 1
 
     def _text_cb(self, msg: String):
         if self.state != "running": return
@@ -271,7 +1061,7 @@ class _TTSNode(Node):
             text = msg.data.strip()
         if text:
             log.info(f"[tts] received text from topic: {text[:50]}...")
-            self._text_queue.put((text, ''))
+            self._text_queue.put(text)
 
     def _worker(self):
         from audio_msgs.msg import AudioChunk
@@ -279,37 +1069,77 @@ class _TTSNode(Node):
 
         # Real-time pacing: publish frames at playback rate to avoid bursts/gaps
         FRAME_DURATION = CHUNK_BYTES / (SAMPLE_RATE * 2)  # 0.1s per 3200-byte frame
-        PREBUF_FRAMES  = 3  # buffer 3 frames (~300ms) before starting real-time pacing
+        PREBUF_FRAMES  = 1  # 1 frame (~100ms); was 3 (~300ms) for lower judged TTFT
 
         while not self._stop_event.is_set():
             try:
-                item = self._text_queue.get(timeout=1)
+                text = self._text_queue.get(timeout=1)
             except queue.Empty:
                 continue
-            # Unpack queue item: (text, trace_id, action_id) or legacy formats
-            if isinstance(item, tuple):
-                if len(item) == 3:
-                    text, _trace_id, _action_id = item
-                elif len(item) == 2:
-                    text, _trace_id = item
-                    _action_id = ''
-                else:
-                    text, _trace_id, _action_id = str(item[0]), '', ''
-            else:
-                text, _trace_id, _action_id = item, '', ''
             try:
                 import time as _time
                 t_start = _time.monotonic()
-                t_start_wall = _time.time()  # wall-clock for perf span
-                t0_wall = None  # wall-clock when playback starts (prebuf complete)
                 total = 0
                 buf   = b''
                 t0    = None  # wall-clock start of playback
                 frames_sent = 0
                 prebuf = []   # pre-buffer queue
+                first_audio_latency = None
+                segments = self._adapter.split_text(text)
+                if not segments:
+                    continue
 
-                for raw_chunk in self._adapter.synthesize_stream(text):
-                    if self._stop_event.is_set() or self._interrupt_flag.is_set():
+                log.info(
+                    f"[tts] split {len(text)} chars into {len(segments)} segment(s): "
+                    f"{[len(segment) for segment in segments]}"
+                )
+
+                # Decouple offline sentence synthesis from real-time publishing.
+                # The producer can generate the next sentence while audio from
+                # the current sentence is being paced to the ROS2 topic.
+                audio_queue = queue.Queue(maxsize=SYNTH_QUEUE_FRAMES)
+                stream_end = object()
+                producer_error = []
+                synth_elapsed = [0.0]
+
+                def _queue_put(item) -> bool:
+                    while not self._stop_event.is_set():
+                        try:
+                            audio_queue.put(item, timeout=0.1)
+                            return True
+                        except queue.Full:
+                            continue
+                    return False
+
+                def _produce_audio():
+                    synth_t0 = _time.monotonic()
+                    try:
+                        for chunk in self._adapter.synthesize_segments_stream(segments):
+                            if self._stop_event.is_set() or not _queue_put(chunk):
+                                break
+                    except Exception as exc:
+                        producer_error.append(exc)
+                    finally:
+                        synth_elapsed[0] = _time.monotonic() - synth_t0
+                        _queue_put(stream_end)
+
+                producer_thread = threading.Thread(target=_produce_audio, daemon=True)
+                producer_thread.start()
+
+                while not self._stop_event.is_set():
+                    try:
+                        raw_chunk = audio_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        if not producer_thread.is_alive() and audio_queue.empty():
+                            break
+                        continue
+
+                    if raw_chunk is stream_end:
+                        break
+                    if first_audio_latency is None:
+                        first_audio_latency = _time.monotonic() - t_start
+
+                    if self._stop_event.is_set():
                         break
                     buf  += raw_chunk
                     total += len(raw_chunk)
@@ -318,151 +1148,67 @@ class _TTSNode(Node):
                         frame = buf[:CHUNK_BYTES]
                         buf   = buf[CHUNK_BYTES:]
 
-                        # Check interrupt before publishing each frame
-                        if self._interrupt_flag.is_set():
-                            break
-
                         # Pre-buffer phase: accumulate a few frames before pacing
                         if t0 is None:
                             prebuf.append(frame)
                             if len(prebuf) >= PREBUF_FRAMES:
-                                # Flush pre-buffer and start real-time clock
-                                t0 = _time.monotonic()
-                                t0_wall = _time.time()
-                                # Fire on_speaking hook (playback starting)
-                                try:
-                                    import urllib.request as _ureq
-                                    import json as _jhook
-                                    _hreq = _ureq.Request(
-                                        "https://localhost:15678/api/hooks/fire",
-                                        data=_jhook.dumps({"hook": "on_speaking"}).encode(),
-                                        headers={"Content-Type": "application/json"},
-                                        method="POST"
-                                    )
-                                    import ssl as _ssl
-                                    _sctx = _ssl.create_default_context()
-                                    _sctx.check_hostname = False
-                                    _sctx.verify_mode = _ssl.CERT_NONE
-                                    _ureq.urlopen(_hreq, timeout=2, context=_sctx)
-                                except Exception:
-                                    pass
+                                t0 = _time.monotonic() if self._realtime_pacing else 0.0
                                 for pf in prebuf:
-                                    msg = AudioChunk()
-                                    msg.header.stamp = self.get_clock().now().to_msg()
-                                    msg.format = "audio/pcm-16k"
-                                    msg.data   = list(pf)
-                                    self._pub.publish(msg)
-                                    frames_sent += 1
+                                    frames_sent = self._publish_frame(
+                                        pf, frames_sent, t0, FRAME_DURATION
+                                    )
                                 prebuf = []
                             continue
 
-                        # Real-time pacing
-                        target = t0 + frames_sent * FRAME_DURATION
-                        now = _time.monotonic()
-                        if now < target:
-                            _time.sleep(target - now)
-                        msg = AudioChunk()
-                        msg.header.stamp = self.get_clock().now().to_msg()
-                        msg.format = "audio/pcm-16k"
-                        msg.data   = list(frame)
-                        self._pub.publish(msg)
-                        frames_sent += 1
+                        frames_sent = self._publish_frame(
+                            frame, frames_sent, t0, FRAME_DURATION
+                        )
 
                 # Flush any remaining pre-buffer (short utterances < PREBUF_FRAMES)
-                if prebuf and not self._stop_event.is_set() and not self._interrupt_flag.is_set():
-                    t0 = _time.monotonic()
+                if prebuf and not self._stop_event.is_set():
+                    if t0 is None:
+                        t0 = _time.monotonic() if self._realtime_pacing else 0.0
                     for pf in prebuf:
-                        msg = AudioChunk()
-                        msg.header.stamp = self.get_clock().now().to_msg()
-                        msg.format = "audio/pcm-16k"
-                        msg.data   = list(pf)
-                        self._pub.publish(msg)
-                        frames_sent += 1
+                        frames_sent = self._publish_frame(
+                            pf, frames_sent, t0, FRAME_DURATION
+                        )
 
                 # flush remainder
-                if buf and not self._stop_event.is_set() and not self._interrupt_flag.is_set():
-                    if t0 is not None:
+                if buf and not self._stop_event.is_set():
+                    if self._realtime_pacing and t0 is not None:
                         target = t0 + frames_sent * FRAME_DURATION
                         now = _time.monotonic()
                         if now < target:
                             _time.sleep(target - now)
+                    from audio_msgs.msg import AudioChunk
                     msg = AudioChunk()
                     msg.header.stamp = self.get_clock().now().to_msg()
                     msg.format = "audio/pcm-16k"
-                    msg.data   = list(buf)
+                    msg.data = list(buf)
                     self._pub.publish(msg)
+                    frames_sent += 1
 
-                # Clear interrupt flag after utterance is done (interrupted or complete)
-                if self._interrupt_flag.is_set():
-                    self._interrupt_flag.clear()
-                    log.info(f"[tts] utterance interrupted after {frames_sent} frames")
-                else:
-                    log.info(f"[tts] spoke {len(text)} chars → {total} bytes ({frames_sent} frames) in {_time.monotonic() - t_start:.2f}s")
+                producer_thread.join(timeout=0.2)
+                if producer_error:
+                    raise producer_error[0]
 
-                # 发布 EOF 标记：告知下游 Speaker 当前 utterance 已结束
-                self._publish_eof()
-                # 上报 TTS perf spans（生成 + 播放）
-                try:
-                    import json as _json
-                    t_end_wall = _time.time()
-                    spans = []
-                    _span_base = {"type": "perf_span", "component": "perception"}
-                    if _trace_id:
-                        _span_base["trace_id"] = _trace_id
-                    if t0_wall:
-                        spans.append({**_span_base, "span": "tts_generate",
-                                      "start_ts": t_start_wall, "end_ts": t0_wall,
-                                      "meta": {"chars": len(text)}})
-                        spans.append({**_span_base, "span": "tts_playback",
-                                      "start_ts": t0_wall, "end_ts": t_end_wall,
-                                      "meta": {"frames": frames_sent}})
-                    else:
-                        # 没有 prebuf（极短文本），合并为一个 span
-                        spans.append({**_span_base, "span": "tts_generate",
-                                      "start_ts": t_start_wall, "end_ts": t_end_wall,
-                                      "meta": {"chars": len(text), "frames": frames_sent}})
-                    for sp in spans:
-                        perf_msg = String()
-                        perf_msg.data = _json.dumps(sp)
-                        self._perf_pub.publish(perf_msg)
-                except Exception:
-                    pass
-
-                # ACP: 推送动作完成回调到 Agent Core
-                # Also fire on_idle hook (LED off immediately after playback)
-                if _action_id:
-                    try:
-                        import urllib.request as _urllib
-                        import ssl as _ssl
-                        import os as _os
-                        _agent_core_url = _os.environ.get("AGENT_CORE_URL", "https://localhost:15678")
-                        _ctx = _ssl.create_default_context()
-                        _ctx.check_hostname = False
-                        _ctx.verify_mode = _ssl.CERT_NONE
-                        # Fire on_idle to turn off LED
-                        _idle_req = _urllib.Request(
-                            f"{_agent_core_url}/api/hooks/fire",
-                            data=json.dumps({"hook": "on_idle"}).encode(),
-                            headers={"Content-Type": "application/json"},
-                            method="POST"
-                        )
-                        _urllib.urlopen(_idle_req, timeout=2, context=_ctx)
-                        was_interrupted = self._interrupt_flag.is_set()
-                        _payload = json.dumps({
-                            "action_id": _action_id,
-                            "status": "cancelled" if was_interrupted else "completed",
-                            "result": {"text": text[:100], "frames": frames_sent},
-                        }).encode()
-                        _req = _urllib.Request(
-                            f"{_agent_core_url}/api/acp/complete",
-                            data=_payload,
-                            headers={"Content-Type": "application/json"},
-                            method="POST",
-                        )
-                        _urllib.urlopen(_req, timeout=3, context=_ctx)
-                        log.info(f"[tts] ACP complete: {_action_id} ({'cancelled' if was_interrupted else 'completed'})")
-                    except Exception as e:
-                        log.warning(f"[tts] ACP callback failed: {e}")
+                elapsed = _time.monotonic() - t_start
+                audio_duration = total / (SAMPLE_RATE * 2) if total else 0.0
+                synth_rtf = (synth_elapsed[0] / audio_duration) if audio_duration > 0 else 0.0
+                e2e_rtf = (elapsed / audio_duration) if audio_duration > 0 else 0.0
+                mem_mb = _process_rss_mb()
+                first_audio_text = (
+                    f", TTFT={first_audio_latency:.2f}s"
+                    if first_audio_latency is not None
+                    else ""
+                )
+                log.info(
+                    f"[tts] spoke {len(text)} chars in {len(segments)} segment(s) "
+                    f"→ {total} bytes ({frames_sent} frames) in {elapsed:.2f}s"
+                    f"{first_audio_text}, "
+                    f"audio={audio_duration:.2f}s, synth_RTF={synth_rtf:.2f}, "
+                    f"e2e_RTF={e2e_rtf:.2f}, memory_mb={mem_mb:.1f}"
+                )
             except Exception as e:
                 log.error(f"[tts] synthesis error: {e}", exc_info=True)
 
@@ -473,14 +1219,51 @@ class _TTSNode(Node):
             "topic_out": [{"topic": self._output_topic, "format": "audio/pcm-16k", "desc": "synthesized PCM audio"}],
         }
 
-    def _publish_eof(self):
-        """发布 EOF magic chunk，标记当前 utterance 结束。"""
-        from audio_msgs.msg import AudioChunk
-        msg = AudioChunk()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.format = "audio/pcm-16k"
-        msg.data = list(AUDIO_EOF_MAGIC)
-        self._pub.publish(msg)
+
+def _warmup_tts_adapter(adapter: TTSAdapter, text: str = "。") -> None:
+    """Run one silent synthesis to warm up ORT/CUDA before the first speak request."""
+    import time as _time
+
+    if getattr(adapter, "text_normalize", True):
+        text = _normalize_tts_text(text)
+    log.info(f"[tts] warmup starting: text={text!r}")
+    t0 = _time.monotonic()
+    pcm = adapter._synthesize_segment(text)
+    elapsed = _time.monotonic() - t0
+    log.info(f"[tts] warmup done in {elapsed:.2f}s ({len(pcm)} bytes)")
+
+
+def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
+    """Warm up ORT/CUDA (+ ZH and ZH/EN G2P paths) before first speak."""
+    if not plugin_cfg.get("warmup", True):
+        return
+    texts = plugin_cfg.get("warmup_texts")
+    if texts is None:
+        single = plugin_cfg.get(
+            "warmup_text",
+            "你好，欢迎使用语音合成服务，这是一段预热测试文本。",
+        )
+        texts = [single] if isinstance(single, str) else list(single or [])
+    elif isinstance(texts, str):
+        texts = [texts]
+    else:
+        texts = [t for t in texts if t]
+    if not texts:
+        texts = ["你好，欢迎使用语音合成服务，这是一段预热测试文本。"]
+    try:
+        for i, text in enumerate(texts):
+            log.info(f"[tts] warmup [{i + 1}/{len(texts)}]")
+            _warmup_tts_adapter(adapter, text)
+    except Exception as e:
+        log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
+
+
+def _start_warmup_background(adapter: TTSAdapter, plugin_cfg: dict) -> None:
+    """Optional async warmup (warmup_async=true)."""
+    def _run() -> None:
+        _run_tts_warmup(adapter, plugin_cfg)
+
+    threading.Thread(target=_run, daemon=True, name="tts-warmup").start()
 
 
 # ── Plugin ────────────────────────────────────────────────────────────────────
@@ -492,16 +1275,28 @@ class TTSPlugin:
         self._cfg      = plugin_cfg
         self._loading  = False
         self._load_error = None
+        self._realtime_pacing = bool(plugin_cfg.get("realtime_pacing", False))
         try:
             self._adapter  = _build_tts_adapter(plugin_cfg)
         except Exception as e:
             log.error(f"[tts] failed to load model: {e}", exc_info=True)
             self._adapter = None
             self._load_error = str(e)
+        if self._adapter:
+            if plugin_cfg.get("warmup_async", False):
+                _start_warmup_background(self._adapter, plugin_cfg)
+            else:
+                _run_tts_warmup(self._adapter, plugin_cfg)
         self._nodes: dict[str, _TTSNode] = {}
+        self._instance_configs: dict[str, dict] = {}
         self._executor = executor
-        log.info(f"[tts] plugin init: sherpa-onnx VITS, "
-                 f"speaker_id={plugin_cfg.get('speaker_id', 0)}, speed={plugin_cfg.get('speed', 1.0)}")
+        log.info(
+            f"[tts] plugin init: sherpa-onnx {plugin_cfg.get('backend', 'vits')}, "
+            f"speaker_id={plugin_cfg.get('speaker_id', 0)}, "
+            f"speed={plugin_cfg.get('speed', 1.0)}, "
+            f"max_segment_chars={plugin_cfg.get('max_segment_chars', MAX_SEGMENT_CHARS)}, "
+            f"realtime_pacing={self._realtime_pacing}"
+        )
 
     def get_tools(self) -> list:
         return TOOLS
@@ -579,8 +1374,12 @@ class TTSPlugin:
                     self._executor.remove_node(default_node)
                     del self._nodes['_default']
             if node_key not in self._nodes:
-                node = _TTSNode(input_topic or None, self._adapter,
-                                node_suffix=node_key.replace('/', '_').replace('-', '_'))
+                node = _TTSNode(
+                    input_topic or None,
+                    self._adapter,
+                    node_suffix=node_key.replace('/', '_').replace('-', '_'),
+                    realtime_pacing=self._realtime_pacing,
+                )
                 self._executor.add_node(node)
                 self._nodes[node_key] = node
             elif input_topic and self._nodes[node_key]._input_topic != input_topic:
@@ -588,8 +1387,12 @@ class TTSPlugin:
                 old_node = self._nodes[node_key]
                 old_node.stop()
                 self._executor.remove_node(old_node)
-                node = _TTSNode(input_topic, self._adapter,
-                                node_suffix=node_key.replace('/', '_').replace('-', '_'))
+                node = _TTSNode(
+                    input_topic,
+                    self._adapter,
+                    node_suffix=node_key.replace('/', '_').replace('-', '_'),
+                    realtime_pacing=self._realtime_pacing,
+                )
                 self._executor.add_node(node)
                 self._nodes[node_key] = node
             return self._nodes[node_key].start()
@@ -633,50 +1436,52 @@ class TTSPlugin:
                         inst_adapter = _build_tts_adapter(self._instance_configs[instance_id])
                         if inst_adapter:
                             adapter = inst_adapter
-                    node = _TTSNode(input_topic, adapter,
-                                    node_suffix=node_key.replace('/', '_').replace('-', '_'))
+                    node = _TTSNode(
+                        input_topic,
+                        adapter,
+                        node_suffix=node_key.replace('/', '_').replace('-', '_'),
+                        realtime_pacing=self._realtime_pacing,
+                    )
                     self._executor.add_node(node)
                     self._nodes[node_key] = node
                 else:
                     node = self._nodes[node_key]
                 if node.state != "running":
                     node.start()
-            # ACP: 生成 action_id
-            import uuid as _uuid
-            action_id = f"speak-{_uuid.uuid4().hex[:8]}"
-            node.enqueue(text, trace_id=args.get('_trace_id', ''), action_id=action_id)
-            return {"status": "queued", "action_id": action_id, "text": text}
+            node.enqueue(text)
+            return {"status": "queued", "text": text}
 
         elif action == "config":
-            cfg = {k: v for k, v in args.items() if k not in ('action', 'instance_id') and v}
-            # Update config and rebuild adapter
+            cfg = {
+                k: v for k, v in args.items()
+                if k not in ('action', 'instance_id') and v is not None and v != ''
+            }
             if 'speaker_id' in cfg:
                 self._cfg['speaker_id'] = int(cfg['speaker_id'])
             if 'speed' in cfg:
                 self._cfg['speed'] = float(cfg['speed'])
-            self._adapter = _build_tts_adapter(self._cfg)
-            # Stop all nodes (they'll use new adapter on next start)
+            # Prefer in-place update (eval only tweaks sid/speed). Full rebuild
+            # only when adapter missing (e.g. init load failed).
+            if self._adapter is not None:
+                if hasattr(self._adapter, '_sid'):
+                    self._adapter._sid = int(self._cfg.get('speaker_id', 0))
+                if hasattr(self._adapter, '_speed'):
+                    self._adapter._speed = float(self._cfg.get('speed', 1.0))
+            else:
+                try:
+                    self._adapter = _build_tts_adapter(self._cfg)
+                    self._load_error = None
+                    # Init load failed earlier; warm now so first speak is not cold.
+                    _run_tts_warmup(self._adapter, self._cfg)
+                except Exception as e:
+                    self._load_error = str(e)
+                    log.error(f"[tts] config rebuild failed: {e}", exc_info=True)
+                    raise
             for key in list(self._nodes.keys()):
                 self._nodes[key].stop()
                 self._executor.remove_node(self._nodes[key])
                 del self._nodes[key]
             return {"status": "configured"}
-
-        elif action == "interrupt":
-            # 立即中止所有 TTS 播放（清空队列 + 停止当前 utterance）
-            total_cleared = 0
-            interrupted_count = 0
-            if instance_id and instance_id in self._nodes:
-                result = self._nodes[instance_id].interrupt()
-                total_cleared += result.get('cleared', 0)
-                interrupted_count += 1
-            elif not instance_id:
-                for node in self._nodes.values():
-                    if node.state == "running":
-                        result = node.interrupt()
-                        total_cleared += result.get('cleared', 0)
-                        interrupted_count += 1
-            return {"status": "interrupted", "nodes": interrupted_count, "cleared": total_cleared}
 
         return None
 
