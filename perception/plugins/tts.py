@@ -973,24 +973,26 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             cand = os.path.join(model_dir, "model.ort")
             if os.path.isfile(cand):
                 ort_model = cand
-        use_model_bytes = os.environ.get("TTS_ORT_USE_MODEL_BYTES", "0") == "1"
+        # TTS_ORT_USE_MODEL_BYTES:
+        #   0 = path load (default)
+        #   1 = .ort bytes + use_ort_model_bytes_directly (safer)
+        #   2 = also use_ort_model_bytes_for_initializers (segfaulted on Jetson
+        #       ORT 1.23 + CUDA EP with Melo; opt-in only)
+        use_model_bytes = os.environ.get("TTS_ORT_USE_MODEL_BYTES", "0").strip()
         load_path = ort_model if ort_model and os.path.isfile(ort_model) else model_path
-        self._ort_model_bytes = None  # keep alive if use_model_bytes
+        self._ort_model_bytes = None  # keep alive if loading from bytes
         if load_path.endswith(".ort"):
             so.add_session_config_entry("session.load_model_format", "ORT")
-        if use_model_bytes and load_path.endswith(".ort"):
+        if use_model_bytes in ("1", "2") and load_path.endswith(".ort"):
             so.add_session_config_entry("session.use_ort_model_bytes_directly", "1")
-            so.add_session_config_entry(
-                "session.use_ort_model_bytes_for_initializers", "1"
-            )
-            # Required so initializer zero-copy isn't undone by prepack buffers.
             so.add_session_config_entry("session.disable_prepacking", "1")
             disable_prepack = True
-            # Try ORT mmap-from-path if this build supports it (ignore if unknown).
-            try:
-                so.add_session_config_entry("session.use_memory_mapped_ort_model", "1")
-            except Exception:
-                pass
+            if use_model_bytes == "2":
+                so.add_session_config_entry(
+                    "session.use_ort_model_bytes_for_initializers", "1"
+                )
+        if os.environ.get("TTS_ORT_MMAP", "0") == "1" and load_path.endswith(".ort"):
+            so.add_session_config_entry("session.use_memory_mapped_ort_model", "1")
 
         so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
@@ -1004,8 +1006,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             load_path,
             use_model_bytes,
         )
-        if use_model_bytes and load_path.endswith(".ort"):
-            # Keep a single host buffer; ORT will reference it for initializers.
+        if use_model_bytes in ("1", "2") and load_path.endswith(".ort"):
             with open(load_path, "rb") as f:
                 self._ort_model_bytes = f.read()
             self._sess = ort.InferenceSession(

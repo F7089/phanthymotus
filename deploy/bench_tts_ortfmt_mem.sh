@@ -18,8 +18,10 @@ python3 /tmp/convert_melo_ort_format.py --external --out-dir /tmp/melo_fp32_ort
 ls -lah /tmp/melo_fp32_ort/model.ort /tmp/melo_fp32_ort/model.with_external.onnx* 2>/dev/null || true
 "
 
-echo "== RSS A/B =="
+echo "== RSS A/B (skips for_initializers; that combo SIGSEGV on this ORT/CUDA) =="
+# Reuse existing /tmp/melo_fp32_ort if convert already succeeded.
 docker exec -u 0 "${NAME}" python3 /tmp/bench_tts_ortfmt_mem.py | tee "$OUT_HOST"
 echo "wrote $OUT_HOST"
-echo "production try (after model.ort exists in model_dir):"
-echo "  -e TTS_ORT_USE_MODEL_BYTES=1 -e TTS_ORT_DISABLE_PREPACKING=1"
+echo "If convert already done, quick re-bench only:"
+echo "  docker cp deploy/bench_tts_ortfmt_mem.py ${NAME}:/tmp/"
+echo "  docker exec -u 0 ${NAME} python3 /tmp/bench_tts_ortfmt_mem.py"

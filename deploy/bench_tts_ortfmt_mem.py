@@ -85,7 +85,34 @@ def run_case(case: str) -> dict:
             return {"case": case, "error": f"missing {p}; run convert first"}
         so.add_session_config_entry("session.load_model_format", "ORT")
         model_arg = str(p)
+    elif case == "ort_bytes_direct":
+        # Safer: use buffer directly but still copy initializers (no for_initializers).
+        p = ort_dir / "model.ort"
+        if not p.is_file():
+            return {"case": case, "error": f"missing {p}; run convert first"}
+        so.add_session_config_entry("session.load_model_format", "ORT")
+        so.add_session_config_entry("session.use_ort_model_bytes_directly", "1")
+        so.add_session_config_entry("session.disable_prepacking", "1")
+        with open(p, "rb") as f:
+            model_bytes = f.read()
+        model_arg = model_bytes
+    elif case == "ort_mmap":
+        # Path load + mmap (if this ORT build supports the config key).
+        p = ort_dir / "model.ort"
+        if not p.is_file():
+            return {"case": case, "error": f"missing {p}; run convert first"}
+        so.add_session_config_entry("session.load_model_format", "ORT")
+        so.add_session_config_entry("session.use_memory_mapped_ort_model", "1")
+        so.add_session_config_entry("session.disable_prepacking", "1")
+        model_arg = str(p)
     elif case == "ort_bytes":
+        # Known to SIGSEGV on Jetson ORT 1.23 + CUDA EP with Melo; keep opt-in only.
+        if os.environ.get("TTS_ORT_ALLOW_BYTES_INIT", "0") != "1":
+            return {
+                "case": case,
+                "error": "skipped: use_ort_model_bytes_for_initializers SIGSEGV "
+                "on this ORT/CUDA; set TTS_ORT_ALLOW_BYTES_INIT=1 to force",
+            }
         p = ort_dir / "model.ort"
         if not p.is_file():
             return {"case": case, "error": f"missing {p}; run convert first"}
@@ -102,6 +129,7 @@ def run_case(case: str) -> dict:
         p = ort_dir / "model.with_external.onnx"
         if not p.is_file():
             return {"case": case, "error": f"missing {p}; convert --external"}
+        so.add_session_config_entry("session.disable_prepacking", "1")
         model_arg = str(p)
     else:
         return {"case": case, "error": f"unknown case {case}"}
@@ -154,8 +182,9 @@ def main() -> None:
         )
         return
 
+    # ort_bytes (for_initializers) segfaults on Jetson ORT1.23+CUDA; excluded by default.
     cases = os.environ.get(
-        "BENCH_CASES", "onnx,ort_path,ort_bytes,onnx_external"
+        "BENCH_CASES", "onnx,ort_path,ort_bytes_direct,ort_mmap,onnx_external"
     ).split(",")
     summary = []
     for case in [c.strip() for c in cases if c.strip()]:
