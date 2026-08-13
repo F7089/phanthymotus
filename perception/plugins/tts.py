@@ -964,19 +964,60 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         disable_prepack = os.environ.get("TTS_ORT_DISABLE_PREPACKING", "0") == "1"
         if disable_prepack:
             so.add_session_config_entry("session.disable_prepacking", "1")
+
+        # ORT-format path: fewer host-side initializer copies when used with
+        # use_ort_model_bytes_* (see deploy/bench_tts_ortfmt_mem.py).
+        # TTS_ORT_MODEL=path.ort  or auto-pick model.ort next to model.onnx
+        ort_model = os.environ.get("TTS_ORT_MODEL", "").strip()
+        if not ort_model:
+            cand = os.path.join(model_dir, "model.ort")
+            if os.path.isfile(cand):
+                ort_model = cand
+        use_model_bytes = os.environ.get("TTS_ORT_USE_MODEL_BYTES", "0") == "1"
+        load_path = ort_model if ort_model and os.path.isfile(ort_model) else model_path
+        self._ort_model_bytes = None  # keep alive if use_model_bytes
+        if load_path.endswith(".ort"):
+            so.add_session_config_entry("session.load_model_format", "ORT")
+        if use_model_bytes and load_path.endswith(".ort"):
+            so.add_session_config_entry("session.use_ort_model_bytes_directly", "1")
+            so.add_session_config_entry(
+                "session.use_ort_model_bytes_for_initializers", "1"
+            )
+            # Required so initializer zero-copy isn't undone by prepack buffers.
+            so.add_session_config_entry("session.disable_prepacking", "1")
+            disable_prepack = True
+            # Try ORT mmap-from-path if this build supports it (ignore if unknown).
+            try:
+                so.add_session_config_entry("session.use_memory_mapped_ort_model", "1")
+            except Exception:
+                pass
+
         so.intra_op_num_threads = max(1, int(num_threads))
         so.inter_op_num_threads = 1
         so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         log.info(
-            "[tts] melo SessionOptions: cpu_arena=%s mem_pattern=%s disable_prepacking=%s",
+            "[tts] melo SessionOptions: cpu_arena=%s mem_pattern=%s "
+            "disable_prepacking=%s load=%s use_model_bytes=%s",
             so.enable_cpu_mem_arena,
             so.enable_mem_pattern,
             disable_prepack,
+            load_path,
+            use_model_bytes,
         )
-        self._sess = ort.InferenceSession(
-            model_path, sess_options=so, providers=providers
-        )
+        if use_model_bytes and load_path.endswith(".ort"):
+            # Keep a single host buffer; ORT will reference it for initializers.
+            with open(load_path, "rb") as f:
+                self._ort_model_bytes = f.read()
+            self._sess = ort.InferenceSession(
+                self._ort_model_bytes, sess_options=so, providers=providers
+            )
+        else:
+            # Path load (also resolves external .data beside the model).
+            self._sess = ort.InferenceSession(
+                load_path, sess_options=so, providers=providers
+            )
         self._ort = ort
+        model_path = load_path  # for size log below
         active = self._sess.get_providers()
         hw = (hw_provider or "").lower()
         want_gpu = hw in ("cuda", "tensorrt", "trt")
