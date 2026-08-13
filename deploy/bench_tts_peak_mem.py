@@ -33,7 +33,7 @@ from pathlib import Path
 
 
 DEFAULT_OUT = Path.home() / "fanyi" / "wav_out"
-DEFAULT_TEXT = "请先打开 WiFi 连接办公室网络，然后再继续下载这次的更新包。"
+DEFAULT_TEXT = "请你先打开 WiFi 连上办公室网络，确认信号稳定之后，再继续下载这次的系统更新包。"
 WARMUP_ZH = "你好，这是测试。"
 WARMUP_EN = "hello, this is a test."
 

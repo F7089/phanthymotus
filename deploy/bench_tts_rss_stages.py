@@ -51,7 +51,7 @@ def run_case(case: str) -> dict:
     warmup_en = os.environ.get("BENCH_WARMUP_EN", "hello, this is a test.")
     bench_text = os.environ.get(
         "BENCH_TEXT",
-        "请先打开 WiFi 连接办公室网络，然后再继续下载这次的更新包。",
+        "请你先打开 WiFi 连上办公室网络，确认信号稳定之后，再继续下载这次的系统更新包。",
     )
 
     import onnxruntime as ort
