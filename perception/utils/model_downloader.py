@@ -57,6 +57,24 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-8k.tar.bz2",
         "check_file": "model.onnx",
     },
+    # Shared OpenEPD + Melo ZH_MIX_EN G2P (NOT in voice onnx tar)
+    "tts_melo_openepd_g2p": {
+        "url": f"{JUICEFS_BASE}/melo-openepd-g2p-assets.tar.bz2",
+        "check_file": "openepd_eng_dict.pickle",
+    },
+    # Voice ONNX-only packs (model.onnx + tiny model_meta.json)
+    "tts_melo_openepd_int8": {
+        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-int8.tar.bz2",
+        "check_file": "model.onnx",
+    },
+    "tts_melo_openepd_int8_lufeng": {
+        "url": f"{JUICEFS_BASE}/vits-melo-lufeng-openepd-nobert-44100-int8.tar.bz2",
+        "check_file": "model.onnx",
+    },
+    "tts_melo_openepd_int8_kai": {
+        "url": f"{JUICEFS_BASE}/vits-melo-kai-openepd-nobert-44100-int8.tar.bz2",
+        "check_file": "model.onnx",
+    },
     # Piper dual-G2P B2 (model.onnx + model.onnx.json + frontend + lexicon + vendor/g2p)
     "tts_piper_b2": {
         "url": f"{JUICEFS_BASE}/piper-longanlingxin-b2.tar.bz2",

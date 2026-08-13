@@ -783,6 +783,152 @@ class PiperDualG2PTTSAdapter(TTSAdapter):
         return _float_samples_to_pcm16(samples)
 
 
+class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
+    """Melo ONNX via ORT + separately downloaded OpenEPD / ZH_MIX_EN G2P.
+
+    JuiceFS (see melo_training/lib/pack_jetson_melo_openepd.py):
+      - voice tar: model.onnx (+ tiny model_meta.json) only
+      - assets tar melo-openepd-g2p-assets: openepd pickle + vendor/melo_g2p + symbols
+    """
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 0.9,
+        model_name: str = "tts_melo_openepd_int8",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+        noise_scale: float = 0.6,
+        noise_scale_w: float = 0.8,
+        g2p_model_name: str = "tts_melo_openepd_g2p",
+        g2p_dir: str = "/models/melo-openepd-g2p-assets",
+    ):
+        import json
+        import os
+        import sys
+        from utils.model_downloader import ensure_model
+
+        # 1) shared OpenEPD + G2P  2) voice ONNX
+        ensure_model(g2p_model_name, g2p_dir)
+        ensure_model(model_name, model_dir)
+        mem_before = _process_rss_mb()
+
+        model_path = os.path.join(model_dir, "model.onnx")
+        openepd = os.path.join(g2p_dir, "openepd_eng_dict.pickle")
+        cfg_path = os.path.join(g2p_dir, "config.json")
+        vendor = os.path.join(g2p_dir, "vendor")
+        g2p_root = os.path.join(vendor, "melo_g2p")
+
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(model_path)
+        if not os.path.isfile(cfg_path):
+            raise FileNotFoundError(cfg_path)
+        if not os.path.isfile(openepd):
+            raise FileNotFoundError(openepd)
+        if not os.path.isdir(g2p_root):
+            raise FileNotFoundError(g2p_root)
+
+        os.environ["MELO_OPENEPD_DICT"] = openepd
+        os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+        if vendor not in sys.path:
+            sys.path.insert(0, vendor)
+        for key in list(sys.modules):
+            if key == "melo_g2p" or key.startswith("melo_g2p."):
+                sys.modules.pop(key, None)
+
+        import melo_g2p  # noqa: F401
+        from melo_g2p.encode import encode_phones_tones
+
+        with open(cfg_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        self._symbols = list(meta.get("symbols") or [])
+        if not self._symbols:
+            raise RuntimeError(f"g2p config.json missing symbols: {cfg_path}")
+        self._add_blank = bool(meta.get("add_blank", True))
+        self._language = str(meta.get("language") or "ZH_MIX_EN")
+        self._model_sr = int(meta.get("sample_rate") or 44100)
+        voice_meta_path = os.path.join(model_dir, "model_meta.json")
+        if os.path.isfile(voice_meta_path):
+            with open(voice_meta_path, encoding="utf-8") as f:
+                vmeta = json.load(f)
+            self._model_sr = int(vmeta.get("sample_rate") or self._model_sr)
+            if speaker_id == 0 and "speaker_id" in vmeta:
+                speaker_id = int(vmeta["speaker_id"])
+
+        self._encode = encode_phones_tones
+        self._sid = int(speaker_id)
+        self._speed = float(speed) if speed else 1.0
+        self._noise_scale = float(noise_scale)
+        self._noise_scale_w = float(noise_scale_w)
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+
+        ort, providers = _piper_ort_providers(hw_provider)
+        so = ort.SessionOptions()
+        so.enable_cpu_mem_arena = False
+        so.intra_op_num_threads = max(1, int(num_threads))
+        so.inter_op_num_threads = 1
+        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        self._sess = ort.InferenceSession(
+            model_path, sess_options=so, providers=providers
+        )
+        self._ort = ort
+        active = self._sess.get_providers()
+        if hw_provider == "cuda" and "CUDAExecutionProvider" not in active:
+            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
+            msg = f"[tts] melo_openepd: providers={active} (wanted CUDA)"
+            if require:
+                raise RuntimeError(msg)
+            log.warning(msg)
+
+        model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] melo_openepd ORT loaded: model_dir={model_dir}, "
+            f"g2p_dir={g2p_dir}, model_size_mb={model_size_mb:.1f}, "
+            f"sr={self._model_sr}, openepd={openepd}, language={self._language}, "
+            f"providers={active}, rss_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        import numpy as np
+        import re
+
+        if not text or not text.strip():
+            return b""
+        # Match Melo api.tts_to_file for ZH_MIX_EN
+        t = text
+        if self._language in ("EN", "ZH_MIX_EN"):
+            t = re.sub(r"([a-z])([A-Z])", r"\1 \2", t)
+
+        phone_ids, tone_ids = self._encode(
+            t,
+            self._symbols,
+            add_blank=self._add_blank,
+            language=self._language,
+        )
+        if not phone_ids:
+            return b""
+
+        length_scale = 1.0 / self._speed if self._speed else 1.0
+        feed = {
+            "x": np.array([phone_ids], dtype=np.int64),
+            "x_lengths": np.array([len(phone_ids)], dtype=np.int64),
+            "tones": np.array([tone_ids], dtype=np.int64),
+            "sid": np.array([self._sid], dtype=np.int64),
+            "noise_scale": np.array([self._noise_scale], dtype=np.float32),
+            "length_scale": np.array([length_scale], dtype=np.float32),
+            "noise_scale_w": np.array([self._noise_scale_w], dtype=np.float32),
+        }
+        audio = np.asarray(_piper_run(self._sess, self._ort, feed)[0]).squeeze()
+        audio = audio.astype(np.float32)
+        samples = _resample_to_16k(audio, self._model_sr)
+        return _float_samples_to_pcm16(samples)
+
+
 def _build_tts_adapter(cfg: dict) -> TTSAdapter:
     model_dir = cfg.get("model_dir", "/models/sherpa-onnx/tts")
     speaker_id = int(cfg.get("speaker_id", 0))
@@ -798,6 +944,19 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
             num_threads=int(cfg.get("num_threads", 2)),
             noise_scale=float(cfg.get("noise_scale", 0.667)),
             noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
+        )
+    elif backend == "melo_openepd":
+        adapter = MeloOpenEpdOrtTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts_melo_openepd_int8"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+            noise_scale=float(cfg.get("noise_scale", 0.6)),
+            noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
+            g2p_model_name=cfg.get("g2p_model_name", "tts_melo_openepd_g2p"),
+            g2p_dir=cfg.get("g2p_dir", "/models/melo-openepd-g2p-assets"),
         )
     elif backend == "kokoro":
         adapter = SherpaOnnxKokoroTTSAdapter(

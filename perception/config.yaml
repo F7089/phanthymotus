@@ -20,23 +20,27 @@ plugins:
 
   tts:
     enabled: true
-    # Piper dual-G2P MB-iSTFT (longanlingxin B2). Package: piper-longanlingxin-b2.tar.bz2
-    backend: piper
-    model_name: tts_piper_b2
-    model_dir: /models/piper-longanlingxin-b2
+    # OpenEPD Melo: voice ONNX tar + separate G2P/OpenEPD assets tar
+    backend: melo_openepd
+    model_name: tts_melo_openepd_int8
+    model_dir: /models/vits-melo-longanlingxin-openepd-nobert-44100-int8
+    g2p_model_name: tts_melo_openepd_g2p
+    g2p_dir: /models/melo-openepd-g2p-assets
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0
     speed: 0.9
-    text_normalize: true
-    max_segment_chars: 60  # RTF-friendly; shorter segments raise RTF (more ORT runs)
+    # TN left to Melo chinese_mix / english (OpenEPD); avoid double TN
+    text_normalize: false
+    max_segment_chars: 60
     warmup: true
     warmup_async: false
-    # Minimal ZH + EN: heat dual-G2P; keep short to limit sticky ORT workspace.
     warmup_texts:
-      - "好。"
-      - "YouTube。"
+      - "你好"
+      - "hello"
     realtime_pacing: false
+    noise_scale: 0.6
+    noise_scale_w: 0.8
 
   htmsg:
     enabled: false
