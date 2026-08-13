@@ -19,16 +19,27 @@ def main() -> None:
     g2p_assets = Path("/models/melo-openepd-g2p-assets")
     text_dir = g2p_assets / "vendor" / "melo_g2p" / "text"
     sys.path.insert(0, str(text_dir))
-    os.environ.setdefault(
-        "MELO_G2P_OOV_CKPT", str(text_dir / "checkpoint20.npz")
-    )
 
     import pickle
 
     from slim_g2p_oov import SlimG2pOov, predict_oov
 
     # Reference: official g2p_en predict only (still loads nltk once here)
+    import g2p_en
     from g2p_en.g2p import G2p
+
+    def _resolve_ckpt() -> str:
+        cand = [
+            os.environ.get("MELO_G2P_OOV_CKPT", ""),
+            str(text_dir / "checkpoint20.npz"),
+            str(Path(g2p_en.__file__).resolve().parent / "checkpoint20.npz"),
+        ]
+        for p in cand:
+            if p and os.path.isfile(p):
+                return p
+        raise FileNotFoundError(
+            "checkpoint20.npz missing; run: bash deploy/patch_melo_slim_g2p.sh"
+        )
 
     class _Ref(G2p):
         def __init__(self):
@@ -121,8 +132,11 @@ def main() -> None:
     oovs = oovs[:250]
     print(f"test_oovs={len(oovs)}")
 
+    ckpt = _resolve_ckpt()
+    os.environ["MELO_G2P_OOV_CKPT"] = ckpt
+    print(f"ckpt={ckpt}")
     print("init slim + reference G2p (ref loads nltk once)...")
-    slim = SlimG2pOov(ckpt=str(text_dir / "checkpoint20.npz"))
+    slim = SlimG2pOov(ckpt=ckpt)
     ref = _Ref()
 
     mismatch = []
