@@ -69,6 +69,10 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-fp32.tar.bz2",
         "check_file": "model.onnx",
     },
+    "tts_melo_openepd_fp16": {
+        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-fp16.tar.bz2",
+        "check_file": "model.onnx",
+    },
     "tts_melo_openepd_int8": {
         "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-int8.tar.bz2",
         "check_file": "model.onnx",
