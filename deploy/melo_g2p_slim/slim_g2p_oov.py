@@ -91,10 +91,18 @@ def _find_checkpoint() -> str:
     if env and os.path.isfile(env):
         return env
     here = os.path.dirname(os.path.abspath(__file__))
-    cand = os.path.join(here, "checkpoint20.npz")
-    if os.path.isfile(cand):
-        return cand
-    # Fallback: installed g2p_en package
+    # Prefer vendored / data-disk paths (no g2p_en import).
+    candidates = [
+        os.path.join(here, "checkpoint20.npz"),
+        "/models/melo-openepd-g2p-assets/vendor/melo_g2p/text/checkpoint20.npz",
+        # Host data disk → usually bind-mounted into the container as /models
+        "/data/fanyi/tts/g2p/checkpoint20.npz",
+        os.path.expanduser("~/fanyi/tts/g2p/checkpoint20.npz"),
+    ]
+    for cand in candidates:
+        if cand and os.path.isfile(cand):
+            return cand
+    # Last resort: installed g2p_en package (dev / parity only)
     try:
         import g2p_en
 
@@ -105,8 +113,8 @@ def _find_checkpoint() -> str:
     except Exception:
         pass
     raise FileNotFoundError(
-        "checkpoint20.npz not found; set MELO_G2P_OOV_CKPT or vendor it "
-        "next to slim_g2p_oov.py"
+        "checkpoint20.npz not found; place it at "
+        "/data/fanyi/tts/g2p/checkpoint20.npz (or set MELO_G2P_OOV_CKPT)"
     )
 
 

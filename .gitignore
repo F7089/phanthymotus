@@ -42,3 +42,7 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# Large G2P assets (keep on data disk; not in git)
+deploy/melo_g2p_slim/checkpoint20.npz
+*.npz

@@ -927,9 +927,14 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
             raise FileNotFoundError(g2p_root)
 
         os.environ["MELO_OPENEPD_DICT"] = openepd
-        ckpt = os.path.join(g2p_root, "text", "checkpoint20.npz")
-        if os.path.isfile(ckpt):
-            os.environ.setdefault("MELO_G2P_OOV_CKPT", ckpt)
+        for ckpt in (
+            os.path.join(g2p_root, "text", "checkpoint20.npz"),
+            "/data/fanyi/tts/g2p/checkpoint20.npz",
+            os.path.expanduser("~/fanyi/tts/g2p/checkpoint20.npz"),
+        ):
+            if os.path.isfile(ckpt):
+                os.environ.setdefault("MELO_G2P_OOV_CKPT", ckpt)
+                break
         os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
