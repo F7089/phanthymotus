@@ -44,11 +44,11 @@ MODELS = {
         "check_file": "tokens.txt",
     },
     "tts": {
-        "url": f"{COS_BASE}/matcha-icefall-zh-en.tar.bz2",
+        "url": f"{JUICEFS_BASE}/matcha-icefall-zh-en.tar.bz2",
         "check_file": "model-steps-3.onnx",
     },
     "tts_vocoder": {
-        "url": f"{COS_BASE}/vocos-16khz-univ.onnx",
+        "url": f"{JUICEFS_BASE}/vocos-16khz-univ.onnx",
         "check_file": "vocos-16khz-univ.onnx",
         "single_file": True,
     },
