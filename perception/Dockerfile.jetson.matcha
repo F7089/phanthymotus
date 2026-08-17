@@ -50,13 +50,7 @@ RUN set -eux; \
     cd sherpa-onnx; \
     python3 setup.py bdist_wheel; \
     pip3 install --no-cache-dir dist/*.whl; \
-    python3 - <<'PY'
-import sherpa_onnx
-print("sherpa-onnx", getattr(sherpa_onnx, "__version__", "?"), sherpa_onnx.__file__)
-ver = str(getattr(sherpa_onnx, "__version__", ""))
-if "+cuda" not in ver.lower():
-    print("WARN: version has no +cuda suffix:", ver)
-PY
+    python3 -c "import sherpa_onnx; print('sherpa-onnx', getattr(sherpa_onnx,'__version__','?'), sherpa_onnx.__file__)"; \
     rm -rf /tmp/src
 
 WORKDIR /opt/matcha_native
