@@ -640,14 +640,23 @@ class SherpaOnnxKokoroTTSAdapter(TTSAdapter):
 class SherpaOnnxTTSAdapter(TTSAdapter):
     """On-device TTS using sherpa-onnx Matcha (flow-matching, fast non-autoregressive)."""
 
-    def __init__(self, model_dir: str, speaker_id: int = 0, speed: float = 1.0):
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 1.0,
+        model_name: str = "tts",
+        hw_provider: str = "cpu",
+        num_threads: int = 2,
+    ):
         import os
         from utils.model_downloader import ensure_model
-        ensure_model("tts", model_dir)
+        ensure_model(model_name, model_dir)
         ensure_model("tts_vocoder", model_dir)
 
         import sherpa_onnx
-        # Matcha model files
+
+        mem_before = _process_rss_mb()
         acoustic_model = os.path.join(model_dir, "model-steps-3.onnx")
         vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
         lexicon_path = os.path.join(model_dir, "lexicon.txt")
@@ -656,9 +665,8 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         if not os.path.isdir(data_dir):
             data_dir = ""
 
-        # Gather rule FSTs
         rule_fsts = []
-        for name in ("date-zh.fst", "number-zh.fst", "phone-zh.fst"):
+        for name in ("phone-zh.fst", "date-zh.fst", "number-zh.fst"):
             p = os.path.join(model_dir, name)
             if os.path.exists(p):
                 rule_fsts.append(p)
@@ -671,18 +679,24 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
                     lexicon=lexicon_path if os.path.exists(lexicon_path) else "",
                     tokens=tokens_path,
                     data_dir=data_dir,
-                    length_scale=1.0 / speed if speed else 1.0,
                 ),
-                num_threads=2,
-                provider="cpu",
+                num_threads=num_threads,
+                provider=hw_provider,
             ),
             rule_fsts=",".join(rule_fsts) if rule_fsts else "",
         )
         self._tts = sherpa_onnx.OfflineTts(tts_config)
         self._sid = speaker_id
         self._speed = speed
-        log.info(f"[tts] sherpa-onnx Matcha loaded: model_dir={model_dir}, "
-                 f"speaker_id={speaker_id}, speed={speed}")
+        self._model_sr = self._tts.sample_rate
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        mem_after = _process_rss_mb()
+        log.info(
+            f"[tts] sherpa-onnx Matcha loaded: model_dir={model_dir}, "
+            f"sample_rate={self._model_sr}, speaker_id={speaker_id}, speed={speed}, "
+            f"provider={hw_provider}, num_threads={num_threads}, "
+            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
+        )
 
     def _synthesize_segment(self, text: str) -> bytes:
         audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
@@ -1210,8 +1224,17 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
             hw_provider=cfg.get("hw_provider", "cpu"),
             num_threads=int(cfg.get("num_threads", 2)),
         )
+    elif backend == "matcha":
+        adapter = SherpaOnnxTTSAdapter(
+            model_dir,
+            speaker_id,
+            speed,
+            model_name=cfg.get("model_name", "tts"),
+            hw_provider=cfg.get("hw_provider", "cpu"),
+            num_threads=int(cfg.get("num_threads", 2)),
+        )
     else:
-        adapter = SherpaOnnxTTSAdapter(model_dir, speaker_id, speed)
+        raise ValueError(f"unknown tts backend: {backend}")
     adapter.max_segment_chars = int(cfg.get("max_segment_chars", MAX_SEGMENT_CHARS))
     adapter.prefer_single_pass = bool(cfg.get("prefer_single_pass", True))
     adapter.text_normalize = bool(cfg.get("text_normalize", True))

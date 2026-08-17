@@ -39,7 +39,8 @@ RUN if ls /etc/apt/sources.list.d/*.list 1>/dev/null 2>&1; then \
 # ── System deps ────────────────────────────────────────────────────
 RUN rm -f /etc/apt/sources.list.d/* && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/* && \
     apt-get -o Acquire::AllowInsecureRepositories=true update && \
-    apt-get install -y --no-install-recommends --allow-unauthenticated ffmpeg && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
+        ffmpeg git cmake g++ python3-dev wget ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} colcon-common-extensions && \
@@ -89,8 +90,29 @@ RUN if [ "${SKIP_VOP_DEPS}" = "ON" ]; then \
 
 ENV YOLO_CONFIG_DIR=/work
 
-# ── sherpa-onnx (optional Melo/VITS path; melo_openepd uses ORT directly) ──
-RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} sherpa-onnx
+# ── sherpa-onnx CUDA (Matcha TTS). pip sherpa-onnx is CPU-only; do not use it. ──
+# JP6 CUDA12 → bundled ORT 1.18.1. No heredoc: legacy docker builder splits RUN.
+ARG SHERPA_ONNX_GIT=https://github.com/k2-fsa/sherpa-onnx.git
+ARG SHERPA_ONNX_GIT_MIRROR=https://ghfast.top/https://github.com/k2-fsa/sherpa-onnx.git
+ARG SHERPA_ONNX_REF=v1.13.5
+ARG SHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION=1.18.1
+
+ENV SHERPA_ONNX_CMAKE_ARGS="-DSHERPA_ONNX_ENABLE_GPU=ON -DSHERPA_ONNX_ENABLE_PYTHON=ON -DSHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION=${SHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION} -DCMAKE_BUILD_TYPE=Release"
+
+RUN set -eux; \
+    mkdir -p /tmp/src && cd /tmp/src; \
+    if git clone --depth 1 --branch "${SHERPA_ONNX_REF}" "${SHERPA_ONNX_GIT_MIRROR}" sherpa-onnx \
+       || git clone --depth 1 --branch "${SHERPA_ONNX_REF}" "${SHERPA_ONNX_GIT}" sherpa-onnx; then \
+      echo "cloned ${SHERPA_ONNX_REF}"; \
+    else \
+      git clone --depth 1 "${SHERPA_ONNX_GIT_MIRROR}" sherpa-onnx \
+        || git clone --depth 1 "${SHERPA_ONNX_GIT}" sherpa-onnx; \
+    fi; \
+    cd sherpa-onnx; \
+    python3 setup.py bdist_wheel; \
+    pip3 install --no-cache-dir dist/*.whl; \
+    python3 -c "import sherpa_onnx; print('sherpa-onnx', getattr(sherpa_onnx,'__version__','?'), sherpa_onnx.__file__)"; \
+    rm -rf /tmp/src
 
 # ── Jetson onnxruntime-gpu (CUDA EP for melo_openepd) ───────────────
 # JuiceFS currently has cp310 wheel (JP6 / jp61-torch). JP5 (py3.8) needs a
