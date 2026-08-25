@@ -19,11 +19,10 @@ plugins:
 
   tts:
     enabled: true
-    # Official sherpa-onnx Matcha (JuiceFS): matcha-icefall-zh-en + vocos-16khz-univ.
-    # Native 16 kHz; CUDA via GPU-enabled sherpa-onnx (not Melo onnxruntime-gpu).
+    # Matcha e500: kai and lufeng are separate JuiceFS tars. Vocos is inside each tar.
     backend: matcha
-    model_name: tts
-    model_dir: /models/matcha-icefall-zh-en
+    model_name: tts_matcha_kai
+    model_dir: /models/matcha-kai-16k-e500
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0

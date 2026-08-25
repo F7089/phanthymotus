@@ -44,7 +44,15 @@ MODELS = {
         "check_file": "tokens.txt",
     },
     "tts": {
-        "url": f"{JUICEFS_BASE}/matcha-icefall-zh-en.tar.bz2",
+        "url": f"{JUICEFS_BASE}/matcha-kai-16k-e500.tar.bz2",
+        "check_file": "model-steps-3.onnx",
+    },
+    "tts_matcha_kai": {
+        "url": f"{JUICEFS_BASE}/matcha-kai-16k-e500.tar.bz2",
+        "check_file": "model-steps-3.onnx",
+    },
+    "tts_matcha_lufeng": {
+        "url": f"{JUICEFS_BASE}/matcha-lufeng-16k-e500.tar.bz2",
         "check_file": "model-steps-3.onnx",
     },
     # WeText TN graphs (tagger+verbalizer). JuiceFS only — never git.

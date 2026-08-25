@@ -1260,7 +1260,7 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
             model_dir,
             speaker_id,
             speed,
-            model_name=cfg.get("model_name", "tts"),
+            model_name=cfg.get("model_name", "tts_matcha_kai"),
             hw_provider=cfg.get("hw_provider", "cpu"),
             num_threads=int(cfg.get("num_threads", 2)),
             noise_scale=float(cfg.get("noise_scale", 0.667)),
