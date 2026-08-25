@@ -47,6 +47,11 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/matcha-icefall-zh-en.tar.bz2",
         "check_file": "model-steps-3.onnx",
     },
+    # WeText TN graphs (tagger+verbalizer). JuiceFS only — never git.
+    "tts_wetext": {
+        "url": f"{JUICEFS_BASE}/wetext.tar.bz2",
+        "check_file": "zh_tn_tagger.fst",
+    },
     "tts_vocoder": {
         "url": f"{JUICEFS_BASE}/vocos-16khz-univ.onnx",
         "check_file": "vocos-16khz-univ.onnx",

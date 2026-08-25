@@ -45,12 +45,23 @@ fetch "$WORKDIR/vocos-16khz-univ.onnx" \
 cp -a "$WORKDIR/matcha-icefall-zh-en.tar.bz2" "$JUICE_ROOT/matcha-icefall-zh-en.tar.bz2"
 cp -a "$WORKDIR/vocos-16khz-univ.onnx" "$JUICE_ROOT/vocos-16khz-univ.onnx"
 
-ls -lh "$JUICE_ROOT/matcha-icefall-zh-en.tar.bz2" "$JUICE_ROOT/vocos-16khz-univ.onnx"
+# WeText TN graphs stay on the data disk (typically >1MB). Not in git.
+WETEXT_SRC="${WETEXT_SRC:-/mnt/data/fanyi/wetext}"
+if [[ -f "$WETEXT_SRC/zh_tn_tagger.fst" && -f "$WETEXT_SRC/zh_tn_verbalizer.fst" ]]; then
+  tar -C "$WETEXT_SRC" -cjf "$JUICE_ROOT/wetext.tar.bz2" \
+    zh_tn_tagger.fst zh_tn_verbalizer.fst
+  echo "packed $JUICE_ROOT/wetext.tar.bz2"
+else
+  echo "WARN missing $WETEXT_SRC/{zh_tn_tagger,zh_tn_verbalizer}.fst; skip wetext.tar.bz2"
+fi
+
+ls -lh "$JUICE_ROOT/matcha-icefall-zh-en.tar.bz2" "$JUICE_ROOT/vocos-16khz-univ.onnx" \
+  "$JUICE_ROOT/wetext.tar.bz2" 2>/dev/null || true
 
 echo "== HTTP =="
-for name in matcha-icefall-zh-en.tar.bz2 vocos-16khz-univ.onnx; do
+for name in matcha-icefall-zh-en.tar.bz2 vocos-16khz-univ.onnx wetext.tar.bz2; do
   echo "--- $HTTP/$name"
   curl -sI --noproxy '*' "$HTTP/$name" | head -5 || true
 done
 
-echo "packed. tar = acoustic + lexicon + fst + espeak; vocos = vocoder."
+echo "packed. tar = acoustic + lexicon + fst + espeak; vocos = vocoder; wetext = TN graphs."

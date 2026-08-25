@@ -648,11 +648,19 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         model_name: str = "tts",
         hw_provider: str = "cpu",
         num_threads: int = 2,
+        noise_scale: float = 0.667,
+        wetext_dir: str = "",
     ):
         import os
+        from utils.matcha_text_frontend import MatchaTextFrontend
         from utils.model_downloader import ensure_model
         ensure_model(model_name, model_dir)
         ensure_model("tts_vocoder", model_dir)
+        if wetext_dir:
+            try:
+                ensure_model("tts_wetext", wetext_dir)
+            except Exception as e:
+                log.warning("[tts] WeText JuiceFS load skipped: %s", e)
 
         import sherpa_onnx
 
@@ -665,38 +673,61 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         if not os.path.isdir(data_dir):
             data_dir = ""
 
+        self._frontend = MatchaTextFrontend(wetext_dir or None)
+        # WeText already verbalizes numbers/dates/ALLCAPS. Do not stack sherpa FSTs.
         rule_fsts = []
-        for name in ("phone-zh.fst", "date-zh.fst", "number-zh.fst"):
-            p = os.path.join(model_dir, name)
-            if os.path.exists(p):
-                rule_fsts.append(p)
+        if not self._frontend.has_wetext:
+            for name in ("phone-zh.fst", "date-zh.fst", "number-zh.fst"):
+                p = os.path.join(model_dir, name)
+                if os.path.exists(p):
+                    rule_fsts.append(p)
 
-        tts_config = sherpa_onnx.OfflineTtsConfig(
+        matcha_kw = dict(
+            acoustic_model=acoustic_model,
+            vocoder=vocoder,
+            lexicon=lexicon_path if os.path.exists(lexicon_path) else "",
+            tokens=tokens_path,
+            data_dir=data_dir,
+            noise_scale=float(noise_scale),
+        )
+        tts_kw = dict(
             model=sherpa_onnx.OfflineTtsModelConfig(
-                matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(
-                    acoustic_model=acoustic_model,
-                    vocoder=vocoder,
-                    lexicon=lexicon_path if os.path.exists(lexicon_path) else "",
-                    tokens=tokens_path,
-                    data_dir=data_dir,
-                ),
+                matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(**matcha_kw),
                 num_threads=num_threads,
                 provider=hw_provider,
             ),
             rule_fsts=",".join(rule_fsts) if rule_fsts else "",
         )
+        try:
+            tts_config = sherpa_onnx.OfflineTtsConfig(
+                **tts_kw, max_num_sentences=-1
+            )
+        except TypeError:
+            tts_config = sherpa_onnx.OfflineTtsConfig(**tts_kw)
         self._tts = sherpa_onnx.OfflineTts(tts_config)
         self._sid = speaker_id
         self._speed = speed
         self._model_sr = self._tts.sample_rate
         self.max_segment_chars = MAX_SEGMENT_CHARS
+        self.text_normalize = False
         mem_after = _process_rss_mb()
         log.info(
             f"[tts] sherpa-onnx Matcha loaded: model_dir={model_dir}, "
             f"sample_rate={self._model_sr}, speaker_id={speaker_id}, speed={speed}, "
             f"provider={hw_provider}, num_threads={num_threads}, "
+            f"noise_scale={noise_scale}, wetext={self._frontend.has_wetext}, "
             f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
         )
+
+    def split_text(self, text: str) -> list[str]:
+        text = self._frontend.normalize(text)
+        text = (text or "").strip()
+        if not text:
+            return []
+        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
+        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
+            return [text]
+        return _split_text_for_tts(text, max_chars)
 
     def _synthesize_segment(self, text: str) -> bytes:
         audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
@@ -1232,6 +1263,8 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
             model_name=cfg.get("model_name", "tts"),
             hw_provider=cfg.get("hw_provider", "cpu"),
             num_threads=int(cfg.get("num_threads", 2)),
+            noise_scale=float(cfg.get("noise_scale", 0.667)),
+            wetext_dir=str(cfg.get("wetext_dir", "") or ""),
         )
     else:
         raise ValueError(f"unknown tts backend: {backend}")

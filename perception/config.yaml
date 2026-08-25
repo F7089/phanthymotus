@@ -28,7 +28,10 @@ plugins:
     num_threads: 2
     speaker_id: 0
     speed: 1.0
+    # Matcha frontend (letter rules + optional WeText). Do not stack sherpa
+    # phone/date/number FSTs when wetext_dir is present.
     text_normalize: false
+    wetext_dir: /models/wetext
     max_segment_chars: 80
     prefer_single_pass: true
     warmup: true
@@ -37,7 +40,7 @@ plugins:
       - "你好"
       - "hello"
     realtime_pacing: false
-    noise_scale: 0.6
+    noise_scale: 0.667
     noise_scale_w: 0.8
 
   htmsg:
