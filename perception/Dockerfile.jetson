@@ -131,15 +131,20 @@ COPY perception/melo_g2p_slim/ /work/melo_g2p_slim/
 COPY perception/config.yaml /work/config.yaml
 COPY perception/deploy/ /deploy/
 COPY deploy/judgeflow_tts_run.sh /deploy/judgeflow_tts_run.sh
-# Hook must be compiled in THIS image (JP5 glibc 2.31 / JP6 2.35).
-# A host-built .so pulled GLIBC_2.34 and broke JP5 python. Do not compile on eval boxes.
-RUN g++ -shared -fPIC -O2 -fno-exceptions -x c \
-        /deploy/ort_cuda_mem_hook.c -ldl \
-        -o /deploy/libort_cuda_mem_hook.so && \
-    chmod 755 /deploy/libort_cuda_mem_hook.so \
+# Bake hook into /usr/local/lib (not /deploy). /deploy can contain a
+# host-built .so from the build context and that required GLIBC_2.34.
+# cc -nodefaultlibs avoids libstdc++ pulling a newer glibc.
+RUN rm -f /deploy/libort_cuda_mem_hook.so && \
+    mkdir -p /usr/local/lib && \
+    cc -shared -fPIC -O2 -nodefaultlibs -lc -ldl \
+        /deploy/ort_cuda_mem_hook.c \
+        -o /usr/local/lib/libort_cuda_mem_hook.so && \
+    chmod 755 /usr/local/lib/libort_cuda_mem_hook.so \
               /deploy/entrypoint.sh \
               /deploy/judgeflow_tts_run.sh && \
-    python3 -c "import ctypes; ctypes.CDLL('/deploy/libort_cuda_mem_hook.so'); print('ort_cuda_mem_hook_ok')"
+    python3 -c "import ctypes, pathlib, sys; p='/usr/local/lib/libort_cuda_mem_hook.so'; b=pathlib.Path(p).read_bytes(); \
+bad=[x for x in (b'GLIBC_2.34', b'GLIBC_2.35', b'GLIBC_2.36') if x in b]; \
+sys.exit('hook ELF requests '+str(bad)) if bad else None; ctypes.CDLL(p); print('ort_cuda_mem_hook_ok')"
 
 EXPOSE 15720
 EXPOSE 15721

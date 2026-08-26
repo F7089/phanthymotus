@@ -98,7 +98,7 @@ def _sherpa_provider(hw_provider: str) -> str:
 
     JP5: Matcha is acoustic ONNX + Vocos ONNX (2 sessions). sherpa 1.13.6
     CUDA EP V1 does not expose cudnn_conv_use_max_workspace / gpu_mem_limit.
-    Those knobs are injected by LD_PRELOAD /deploy/libort_cuda_mem_hook.so
+    Those knobs are injected by LD_PRELOAD /usr/local/lib/libort_cuda_mem_hook.so
     (entrypoint) and also apply to the Python ORT path (Melo/Piper).
 
     Optional: TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config

@@ -6,10 +6,18 @@ set -eo pipefail
 log() { echo "[entrypoint] $*" >&2; }
 
 export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
-HOOK=/deploy/libort_cuda_mem_hook.so
+# Image-baked hook only. Do not use /deploy/*.so — a host-built copy
+# (GLIBC_2.34) was docker-cp'd there and killed python on JP5.
+HOOK=/usr/local/lib/libort_cuda_mem_hook.so
 if [ -f "$HOOK" ]; then
-  export LD_PRELOAD="${HOOK}:${LD_PRELOAD}"
-  log "ORT CUDA mem hook enabled (${HOOK})"
+  if env LD_PRELOAD="${LD_PRELOAD}" python3 -c "import ctypes; ctypes.CDLL('${HOOK}')" >/tmp/ort_hook_probe 2>&1; then
+    export LD_PRELOAD="${HOOK}:${LD_PRELOAD}"
+    log "ORT CUDA mem hook enabled (${HOOK})"
+  else
+    log "WARN: skipping ORT hook (incompatible with this glibc): $(tr '\n' ' ' </tmp/ort_hook_probe)"
+  fi
+else
+  log "ORT CUDA mem hook not in image (${HOOK} missing)"
 fi
 
 # ROS DDS: do not set ROS_DOMAIN_ID in the image — judgeflow injects it at

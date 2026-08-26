@@ -1,0 +1,4 @@
+# Never copy a host-built hook into the image. JP5 containers are glibc 2.31;
+# a Jetson-host gcc may emit GLIBC_2.34 and break python via LD_PRELOAD.
+perception/deploy/*.so
+**/libort_cuda_mem_hook.so
