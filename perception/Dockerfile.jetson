@@ -56,7 +56,7 @@ RUN cd /ros_ws && \
 # --ignore-installed: JP5 base PyYAML is distutils; pip cannot uninstall it.
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
     --ignore-installed pyyaml requests websockets webrtcvad websocket-client dashscope psutil \
-    wetext kaldifst jieba pypinyin cn2an inflect g2p-en nltk && \
+    wetext kaldifst jieba pypinyin cn2an inflect g2p-en nltk "onnx>=1.12,<1.17" && \
     pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
 
 # ── HTMSG deps (KISS-ICP + future semantic) ──────────────────────
@@ -129,20 +129,7 @@ COPY perception/melo_g2p_slim/ /work/melo_g2p_slim/
 COPY perception/config.yaml /work/config.yaml
 COPY perception/deploy/ /deploy/
 COPY deploy/judgeflow_tts_run.sh /deploy/judgeflow_tts_run.sh
-# Bake hook into /usr/local/lib (not /deploy). /deploy can contain a
-# host-built .so from the build context and that required GLIBC_2.34.
-# cc -nodefaultlibs avoids libstdc++ pulling a newer glibc.
-RUN rm -f /deploy/libort_cuda_mem_hook.so && \
-    mkdir -p /usr/local/lib && \
-    cc -shared -fPIC -O2 -nodefaultlibs -lc -ldl \
-        /deploy/ort_cuda_mem_hook.c \
-        -o /usr/local/lib/libort_cuda_mem_hook.so && \
-    chmod 755 /usr/local/lib/libort_cuda_mem_hook.so \
-              /deploy/entrypoint.sh \
-              /deploy/judgeflow_tts_run.sh && \
-    python3 -c "import ctypes, pathlib, sys; p='/usr/local/lib/libort_cuda_mem_hook.so'; b=pathlib.Path(p).read_bytes(); \
-bad=[x for x in (b'GLIBC_2.34', b'GLIBC_2.35', b'GLIBC_2.36') if x in b]; \
-sys.exit('hook ELF requests '+str(bad)) if bad else None; ctypes.CDLL(p); print('ort_cuda_mem_hook_ok')" && \
+RUN chmod 755 /deploy/entrypoint.sh /deploy/judgeflow_tts_run.sh && \
     mkdir -p /opt/vocos_trt_cache
 
 EXPOSE 15720
@@ -150,7 +137,7 @@ EXPOSE 15721
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    TTS_DISABLE_TRT=0 \
+    TTS_DISABLE_TRT=1 \
     TTS_VOCOS_TRT=1 \
     TTS_VOCOS_TRT_CACHE=/opt/vocos_trt_cache \
     TTS_ORT_USE_TRT=0 \

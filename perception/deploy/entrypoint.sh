@@ -6,49 +6,22 @@ set -eo pipefail
 log() { echo "[entrypoint] $*" >&2; }
 
 export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
-# Image-baked hook only. Do not use /deploy/*.so — a host-built copy
-# (GLIBC_2.34) was docker-cp'd there and killed python on JP5.
-HOOK=/usr/local/lib/libort_cuda_mem_hook.so
-if [ -f "$HOOK" ]; then
-  if env LD_PRELOAD="${LD_PRELOAD}" python3 -c "import ctypes; ctypes.CDLL('${HOOK}')" >/tmp/ort_hook_probe 2>&1; then
-    export LD_PRELOAD="${HOOK}:${LD_PRELOAD}"
-    log "ORT CUDA mem hook enabled (${HOOK})"
-  else
-    log "WARN: skipping ORT hook (incompatible with this glibc): $(tr '\n' ' ' </tmp/ort_hook_probe)"
-  fi
-else
-  log "ORT CUDA mem hook not in image (${HOOK} missing)"
-fi
 
 # ROS DDS: do not set ROS_DOMAIN_ID in the image — judgeflow injects it at
 # docker run (must match robot-tts-evaluation). Log runtime values for debug.
 log "starting (LD_PRELOAD=${LD_PRELOAD})"
 log "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-<unset>} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-<unset>}"
 
-# Matcha uses sherpa-onnx's bundled CUDA ORT, not pip onnxruntime-gpu.
-# Checking `import onnxruntime` would exit 125 after the official sherpa wheel.
-#
-# Vocos TRT (③): keep TensorRT EP .so. Acoustic stays CUDA.
-# TTS_DISABLE_TRT=1 would rename the provider and kill vocos TRT.
-if [ "${TTS_VOCOS_TRT:-1}" = "1" ]; then
-  export TTS_DISABLE_TRT="${TTS_DISABLE_TRT:-0}"
-  export TTS_VOCOS_TRT_CACHE="${TTS_VOCOS_TRT_CACHE:-/opt/vocos_trt_cache}"
-  mkdir -p "${TTS_VOCOS_TRT_CACHE}"
-  log "vocos TRT enabled, cache=${TTS_VOCOS_TRT_CACHE}"
-  python3 - <<'TRTPY' || true
-import pathlib, sherpa_onnx
-libdir = pathlib.Path(sherpa_onnx.__file__).resolve().parent / "lib"
-for p in libdir.glob("libonnxruntime_providers_tensorrt*.disabled"):
-    dest = p.with_name(p.name[: -len(".disabled")])
-    try:
-        p.rename(dest)
-        print("restored", dest.name)
-    except OSError as e:
-        print("skip", p.name, e)
-print("trt_so", sorted(x.name for x in libdir.glob("libonnxruntime_providers_tensorrt*")))
-TRTPY
-elif [ "${TTS_DISABLE_TRT:-1}" = "1" ]; then
-    log "disabling TensorRT execution provider (TTS_DISABLE_TRT=1)..."
+# Matcha uses sherpa-onnx's bundled CUDA ORT for acoustic only.
+# Vocos uses TensorRT Runtime (not ORT TensorRT EP). Keep sherpa's TRT EP
+# disabled so ORT does not load a second nvinfer path.
+export TTS_VOCOS_TRT="${TTS_VOCOS_TRT:-1}"
+export TTS_VOCOS_TRT_CACHE="${TTS_VOCOS_TRT_CACHE:-/opt/vocos_trt_cache}"
+mkdir -p "${TTS_VOCOS_TRT_CACHE}"
+log "vocos TensorRT runtime cache=${TTS_VOCOS_TRT_CACHE} enabled=${TTS_VOCOS_TRT}"
+
+if [ "${TTS_DISABLE_TRT:-1}" = "1" ]; then
+    log "disabling sherpa ORT TensorRT EP (native vocos uses TensorRT Runtime)..."
     python3 - <<'TRTPY' || true
 import pathlib
 import sherpa_onnx

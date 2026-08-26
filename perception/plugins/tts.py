@@ -94,15 +94,10 @@ def _piper_run(sess, ort_module, feeds):
 
 
 def _sherpa_provider(hw_provider: str) -> str:
-    """sherpa-onnx EP for Matcha/VITS/Kokoro. CUDA only — never TensorRT.
+    """sherpa-onnx EP for Matcha acoustic / VITS / Kokoro. CUDA only.
 
-    JP5: Matcha is acoustic ONNX + Vocos ONNX (2 sessions). sherpa 1.13.6
-    CUDA EP V1 does not expose cudnn_conv_use_max_workspace / gpu_mem_limit.
-    Those knobs are injected by LD_PRELOAD /usr/local/lib/libort_cuda_mem_hook.so
-    (entrypoint) and also apply to the Python ORT path (Melo/Piper).
-
-    Optional: TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config
-    → provider string ``cuda:<path>`` (CPU arena / graph opts).
+    Vocos does not use this: Matcha + TTS_VOCOS_TRT=1 runs Vocos on TensorRT
+    Runtime (see utils/vocos_trt.py), not an ORT TensorRT EP session.
     """
     import os
 
@@ -712,9 +707,21 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
                 if os.path.exists(p):
                     rule_fsts.append(p)
 
+        vocos_trt = os.environ.get("TTS_VOCOS_TRT", "1") != "0"
+        cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
+        self._vocos = None
+        if vocos_trt:
+            from utils.matcha_skip_vocoder import alias_acoustic_audio_output
+            from utils.vocos_trt import VocosTRT
+
+            if not os.path.isfile(vocoder):
+                raise FileNotFoundError("vocos onnx missing: %s" % vocoder)
+            acoustic_model = alias_acoustic_audio_output(acoustic_model, cache)
+            self._vocos = VocosTRT(vocoder, cache)
+
         matcha_kw = dict(
             acoustic_model=acoustic_model,
-            vocoder=vocoder,
+            vocoder="" if self._vocos is not None else vocoder,
             lexicon=lexicon_path if os.path.exists(lexicon_path) else "",
             tokens=tokens_path,
             data_dir=data_dir,
@@ -737,7 +744,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         self._tts = sherpa_onnx.OfflineTts(tts_config)
         self._sid = speaker_id
         self._speed = speed
-        self._model_sr = self._tts.sample_rate
+        self._model_sr = 16000 if self._vocos is not None else self._tts.sample_rate
         self.max_segment_chars = MAX_SEGMENT_CHARS
         self.text_normalize = False
         mem_after = _process_rss_mb()
@@ -746,6 +753,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
             f"sample_rate={self._model_sr}, speaker_id={speaker_id}, speed={speed}, "
             f"provider={ep}, num_threads={num_threads}, "
             f"noise_scale={noise_scale}, wetext={self._frontend.has_wetext}, "
+            f"vocos={'tensorrt-runtime' if self._vocos is not None else 'sherpa-ort'}, "
             f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
         )
 
@@ -761,7 +769,15 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
 
     def _synthesize_segment(self, text: str) -> bytes:
         audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
-        samples = _resample_to_16k(audio.samples, self._tts.sample_rate)
+        if audio is None or getattr(audio, "samples", None) is None or len(audio.samples) == 0:
+            return b""
+        if self._vocos is not None:
+            samples = self._vocos.mel_flat_to_pcm(audio.samples)
+            src_rate = 16000
+        else:
+            samples = audio.samples
+            src_rate = self._tts.sample_rate
+        samples = _resample_to_16k(samples, src_rate)
         return _float_samples_to_pcm16(samples)
 
 
