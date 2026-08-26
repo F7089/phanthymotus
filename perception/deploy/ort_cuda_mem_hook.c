@@ -218,10 +218,10 @@ static OrtStatus *hooked_cuda_v2(OrtSessionOptions *so,
 static OrtStatus *hooked_create_session(const void *env, const char *path,
                                         const OrtSessionOptions *opts,
                                         void **out) {
-  int want_trt = env_on("TTS_VOCOS_TRT", 1) && path_is_vocos(path) &&
-                 g_after_cuda_append;
+  fprintf(stderr, "[ort_cuda_hook] CreateSession path=%s\n", path ? path : "");
   g_after_cuda_append = 0;
-  if (!want_trt || !orig_create_session_opts || !orig_create_session)
+  if (!path_is_vocos(path) || !env_on("TTS_VOCOS_TRT", 1) ||
+      !orig_create_session_opts || !orig_create_session)
     return orig_create_session(env, path, opts, out);
 
   OrtSessionOptions *so = NULL;
@@ -238,10 +238,9 @@ static OrtStatus *hooked_create_session(const void *env, const char *path,
     fprintf(stderr, "[ort_cuda_hook] vocos TRT append failed; using CUDA only\n");
     append_cuda_v2(so);
   } else {
-    /* CUDA EP fallback for unsupported nodes */
     append_cuda_v2(so);
   }
-  fprintf(stderr, "[ort_cuda_hook] vocos session path=%s\n", path ? path : "");
+  fprintf(stderr, "[ort_cuda_hook] vocos TensorRT session %s\n", path ? path : "");
   return orig_create_session(env, path, so, out);
 }
 
@@ -306,6 +305,9 @@ static const void *hooked_GetApi(uint32_t version) {
   g_api_copy[IDX_CUDA_V1] = (void *)hooked_cuda_v1;
   g_api_copy[IDX_CUDA_V2] = (void *)hooked_cuda_v2;
   g_api_copy[IDX_CREATE_SESSION] = (void *)hooked_create_session;
+  fprintf(stderr,
+          "[ort_cuda_hook] GetApi patched ver=%u create_session orig=%p\n",
+          version, (void *)orig_create_session);
   return g_api_copy;
 }
 
