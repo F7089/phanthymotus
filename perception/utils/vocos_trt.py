@@ -147,7 +147,7 @@ def build_engine(onnx_path: str, engine_path: str, inp: str) -> None:
         "--onnx=" + onnx_path,
         "--saveEngine=" + tmp,
         "--fp16",
-        "--workspace=256",
+        "--workspace=64",
         "--minShapes=%s:1x%dx16" % (inp, N_MELS),
         "--optShapes=%s:1x%dx256" % (inp, N_MELS),
         "--maxShapes=%s:1x%dx2000" % (inp, N_MELS),
@@ -166,7 +166,9 @@ class VocosTRT:
         self._cache = Path(cache_dir)
         self._cache.mkdir(parents=True, exist_ok=True)
         trt_ver = getattr(trt, "__version__", "0")
-        self._engine_path = str(self._cache / ("vocos-16khz-univ.trt%s.fp16.engine" % trt_ver))
+        self._engine_path = str(
+            self._cache / ("vocos-16khz-univ.trt%s.fp16.ws64.engine" % trt_ver)
+        )
         self._inp = _input_name(vocos_onnx)
         self._ensure_engine()
         self._cudart = _Cudart()
