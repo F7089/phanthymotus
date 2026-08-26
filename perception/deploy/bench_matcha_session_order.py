@@ -54,33 +54,44 @@ def _fn(api, idx, restype, *argtypes):
     return ctypes.CFUNCTYPE(restype, *argtypes)(ptr)
 
 
+def _ort_so(libdir):
+    for name in ("libonnxruntime.so.1.16.0", "libonnxruntime.so.1", "libonnxruntime.so"):
+        p = libdir / name
+        if p.is_file():
+            return p
+    cands = [p for p in libdir.glob("libonnxruntime.so*") if "providers" not in p.name]
+    if not cands:
+        raise RuntimeError("no libonnxruntime.so in %s" % libdir)
+    return cands[0]
+
+
 def load_ort_api():
     import sherpa_onnx
 
     libdir = Path(sherpa_onnx.__file__).resolve().parent / "lib"
-    so = next(libdir.glob("libonnxruntime.so*"))
-    for name in (
-        so.name,
-        "libonnxruntime_providers_shared.so",
-        "libonnxruntime_providers_cuda.so",
-    ):
-        path = libdir / name if name != so.name else so
-        if path.is_file():
-            ctypes.CDLL(str(path), mode=ctypes.RTLD_GLOBAL)
-            print("dlopen", path.name, flush=True)
-    lib = ctypes.CDLL(str(so), mode=ctypes.RTLD_GLOBAL)
+    # ORT later dlopen()s providers_cuda.so; ctypes preload of that .so segfaults.
+    os.environ["LD_LIBRARY_PATH"] = "%s:%s" % (
+        libdir,
+        os.environ.get("LD_LIBRARY_PATH", ""),
+    )
+    so = _ort_so(libdir)
+    print("dlopen", so, flush=True)
+    lib = ctypes.CDLL(str(so), mode=os.RTLD_GLOBAL)
     lib.OrtGetApiBase.restype = ctypes.c_void_p
+    lib.OrtGetApiBase.argtypes = []
+    print("calling OrtGetApiBase", flush=True)
     base = lib.OrtGetApiBase()
     if not base:
         raise RuntimeError("OrtGetApiBase NULL")
     GetApi = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_uint32)(
         ctypes.cast(base, ctypes.POINTER(ctypes.c_void_p))[0]
     )
+    print("calling GetApi(16)", flush=True)
     api_ptr = GetApi(16)
     if not api_ptr:
         raise RuntimeError("GetApi(16) NULL")
     api = ctypes.cast(api_ptr, ctypes.POINTER(ctypes.c_void_p))
-    print("ort_api", hex(api_ptr), "lib", so, flush=True)
+    print("ort_api", hex(api_ptr), flush=True)
     return api
 
 
@@ -209,4 +220,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        import time as _t
+
+        _t.sleep(3)
+        raise

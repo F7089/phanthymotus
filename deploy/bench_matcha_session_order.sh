@@ -56,7 +56,7 @@ run_order() {
     /deploy/bench_matcha_session_order.py --order "$order"
 
   for _ in $(seq 1 120); do
-    if docker logs "$NAME" 2>&1 | grep -qE 'CKPT_DONE|RuntimeError|Error|Traceback|missing '; then
+    if docker logs "$NAME" 2>&1 | grep -qE 'CKPT_DONE|Traceback|OrtGetApiBase NULL|GetApi\(16\) NULL|CreateSession_ok'; then
       break
     fi
     if ! docker ps -q --filter "name=^/${NAME}$" | grep -q .; then
@@ -66,7 +66,7 @@ run_order() {
   done
 
   echo "----- logs -----"
-  docker logs "$NAME" 2>&1 | grep -E 'CKPT |CKPT_DONE|CreateSession|dlopen|wrote_tiny|order=|Error|Traceback|RuntimeError|FATAL' || docker logs --tail 50 "$NAME"
+  docker logs "$NAME" 2>&1 | grep -E 'CKPT |CKPT_DONE|CreateSession|dlopen|wrote_tiny|calling |ort_api|order=|Traceback|RuntimeError|FATAL|OSError' || docker logs --tail 80 "$NAME"
 
   CID=$(docker inspect -f '{{.Id}}' "$NAME")
   CG="/sys/fs/cgroup/memory/docker/$CID"
