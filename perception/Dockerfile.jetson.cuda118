@@ -1,0 +1,59 @@
+# JP5.1.1 host unchanged. Userspace CUDA 11.8 + optional ORT rebuild for lazy loading.
+#
+#   docker build -f perception/Dockerfile.jetson.cuda118 --network=host \
+#     --build-arg JP_VERSION=511 --build-arg BUILD_ORT=0 \
+#     -t phanthymotus-cuda118-lazy:probe .
+#
+#   docker build -f perception/Dockerfile.jetson.cuda118 --network=host \
+#     --build-arg JP_VERSION=511 --build-arg BUILD_ORT=1 \
+#     -t phanthymotus-cuda118-lazy:ort .
+ARG JP_VERSION=511
+FROM bj-warehouse.tencentcloudcr.com/phanthy-motus/jetson-base:jp${JP_VERSION}-torch
+ARG PYPI_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple/
+ARG BUILD_ORT=0
+ARG ORT_PARALLEL=2
+ENV ORT_PARALLEL=${ORT_PARALLEL}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_INDEX_URL=${PYPI_MIRROR} \
+    PIP_TRUSTED_HOST="mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn pypi.org files.pythonhosted.org" \
+    CUDA_HOME=/usr/local/cuda-11.8 \
+    CUDA_MODULE_LOADING=LAZY \
+    PATH=/usr/local/cuda-11.8/bin:${PATH}
+
+# Drop base-image CUDA 11.4 from the front of the search path.
+ENV LD_LIBRARY_PATH=/usr/local/cuda-11.8/compat:/usr/local/cuda-11.8/lib64:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
+
+RUN apt-get -o Acquire::AllowInsecureRepositories=true update && \
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
+      wget ca-certificates git cmake ninja-build g++ python3-dev python3-pip \
+      patchelf && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY deploy/cuda118_lazy/ /opt/cuda118_lazy/
+RUN chmod 755 /opt/cuda118_lazy/*.sh && \
+    bash /opt/cuda118_lazy/install_cuda118.sh
+
+RUN gcc -O2 -I/usr/local/cuda-11.8/include \
+      /opt/cuda118_lazy/probe_loading_mode.c \
+      -L/usr/local/cuda-11.8/compat -L/usr/local/cuda-11.8/lib64 \
+      -L/usr/local/cuda-11.8/lib64/stubs \
+      -Wl,-rpath,/usr/local/cuda-11.8/compat -Wl,-rpath,/usr/local/cuda-11.8/lib64 \
+      -lcudart -lcuda -ldl \
+      -o /opt/cuda118_lazy/probe_loading_mode && \
+    /usr/local/cuda-11.8/bin/nvcc --version
+
+RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} "numpy>=1.21,<2" "onnx>=1.12,<1.17"
+
+# ORT rebuild is hours on Orin 8GB. BUILD_ORT=0 is the probe-only image.
+RUN if [ "${BUILD_ORT}" = "1" ]; then \
+      bash /opt/cuda118_lazy/build_ort.sh; \
+    else \
+      echo "BUILD_ORT=0 skip onnxruntime rebuild"; \
+    fi
+
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+LABEL com.nvidia.volumes.needed="nvidia_driver"
+WORKDIR /opt/cuda118_lazy
+CMD ["/opt/cuda118_lazy/probe_loading_mode"]
