@@ -279,13 +279,30 @@ static OrtStatus *hooked_create_session_from_array(const void *env,
   return orig_create_session_from_array(env, data, n, opts, out);
 }
 
-static int find_ort_cb(struct dl_phdr_info *info, size_t size, void *data) {
+#define MAX_ORT_DSOS 8
+
+struct ort_dsos {
+  const char *path[MAX_ORT_DSOS];
+  int n;
+};
+
+static int collect_ort_cb(struct dl_phdr_info *info, size_t size, void *data) {
+  struct ort_dsos *o = data;
+  const char *n = info->dlpi_name;
   (void)size;
-  if (info->dlpi_name && strstr(info->dlpi_name, "libonnxruntime.so")) {
-    *(const char **)data = info->dlpi_name;
-    return 1;
-  }
+  if (!n || !strstr(n, "libonnxruntime.so") || o->n >= MAX_ORT_DSOS)
+    return 0;
+  o->path[o->n++] = n;
   return 0;
+}
+
+static const char *pick_ort_path(const struct ort_dsos *o) {
+  int i;
+  for (i = 0; i < o->n; i++) {
+    if (strstr(o->path[i], "sherpa_onnx"))
+      return o->path[i];
+  }
+  return o->n ? o->path[0] : NULL;
 }
 
 static void *do_dlopen(const char *path, int flags) {
@@ -296,20 +313,56 @@ static void *do_dlopen(const char *path, int flags) {
   return real_dlopen(path, flags);
 }
 
+/* LD_PRELOAD dlopen loses the caller's RPATH. ORT then fails to load
+ * libonnxruntime_providers_shared.so by basename. Retry next to mapped ORT. */
+static void *dlopen_beside_ort(const char *file, int flags) {
+  struct ort_dsos o;
+  char buf[768];
+  const char *slash;
+  void *h;
+  int i, pass;
+  o.n = 0;
+  dl_iterate_phdr(collect_ort_cb, &o);
+  for (pass = 0; pass < 2; pass++) {
+    for (i = 0; i < o.n; i++) {
+      int sherpa = strstr(o.path[i], "sherpa_onnx") != NULL;
+      if (pass == 0 && !sherpa)
+        continue;
+      if (pass == 1 && sherpa)
+        continue;
+      slash = strrchr(o.path[i], '/');
+      if (!slash)
+        continue;
+      snprintf(buf, sizeof(buf), "%.*s/%s", (int)(slash - o.path[i]), o.path[i],
+               file);
+      h = do_dlopen(buf, flags);
+      if (h) {
+        fprintf(stderr, "[ort_cuda_hook] dlopen %s -> %s\n", file, buf);
+        fflush(stderr);
+        return h;
+      }
+    }
+  }
+  return NULL;
+}
+
 static void *load_ort_handle(int open_if_missing) {
-  const char *path = NULL;
+  struct ort_dsos o;
+  const char *path;
   static const char *cands[] = {
-      "libonnxruntime.so.1.16.0",
-      "libonnxruntime.so.1",
       "/usr/local/lib/python3.8/dist-packages/sherpa_onnx/lib/"
       "libonnxruntime.so.1.16.0",
       "/usr/local/lib/python3.10/dist-packages/sherpa_onnx/lib/"
       "libonnxruntime.so.1.16.0",
+      "libonnxruntime.so.1.16.0",
+      "libonnxruntime.so.1",
       NULL,
   };
   int i;
   void *h;
-  dl_iterate_phdr(find_ort_cb, &path);
+  o.n = 0;
+  dl_iterate_phdr(collect_ort_cb, &o);
+  path = pick_ort_path(&o);
   if (path && path[0]) {
     h = do_dlopen(path, RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL);
     if (h)
@@ -414,7 +467,14 @@ static int try_patch_loaded_ort(void) {
   real_OrtGetApiBase = get_base;
   real_GetApi = base->GetApi;
   api = base->GetApi(16);
-  return patch_ort_table((void *)api, 16);
+  if (patch_ort_table((void *)api, 16)) {
+    Dl_info di;
+    if (dladdr((void *)get_base, &di) && di.dli_fname)
+      fprintf(stderr, "[ort_cuda_hook] patched dso=%s\n", di.dli_fname);
+    fflush(stderr);
+    return 1;
+  }
+  return 0;
 }
 
 static const void *hooked_GetApi(uint32_t version) {
@@ -453,6 +513,8 @@ const OrtApiBase *OrtGetApiBase(void) {
 
 void *dlopen(const char *file, int flags) {
   void *h = do_dlopen(file, flags);
+  if (!h && file && file[0] && !strchr(file, '/'))
+    h = dlopen_beside_ort(file, flags);
   if (!g_table_patched)
     try_patch_loaded_ort();
   return h;
