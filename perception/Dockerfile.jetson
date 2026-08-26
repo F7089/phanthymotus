@@ -16,7 +16,7 @@ ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 # 61 = JP6.1 (current test boxes); 511 = JP5.1.1
 ARG JP_VERSION=61
 FROM bj-warehouse.tencentcloudcr.com/phanthy-motus/jetson-base:jp${JP_VERSION}-torch
-ARG PYPI_MIRROR APT_MIRROR
+ARG PYPI_MIRROR APT_MIRROR JP_VERSION
 # TTS-only Jetson builds can skip heavy VOP (ultralytics/CLIP). Leaderboard TTS OK.
 ARG SKIP_VOP_DEPS=ON
 
@@ -91,58 +91,25 @@ RUN if [ "${SKIP_VOP_DEPS}" = "ON" ]; then \
 
 ENV YOLO_CONFIG_DIR=/work
 
-# ── sherpa-onnx CUDA (Matcha TTS). pip sherpa-onnx is CPU-only; do not use it. ──
-# JP6 CUDA12 → bundled ORT 1.18.1. No heredoc: legacy docker builder splits RUN.
-ARG SHERPA_ONNX_GIT=https://github.com/k2-fsa/sherpa-onnx.git
-ARG SHERPA_ONNX_GIT_MIRROR=https://ghfast.top/https://github.com/k2-fsa/sherpa-onnx.git
-ARG SHERPA_ONNX_REF=v1.13.5
-ARG SHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION=1.18.1
-
-# Orin 8G OOM'd at docker exit 137 when compiling with all cores (~55%).
-ENV CMAKE_BUILD_PARALLEL_LEVEL=1 \
-    MAX_JOBS=1 \
-    SHERPA_ONNX_CMAKE_ARGS="-DSHERPA_ONNX_ENABLE_GPU=ON -DSHERPA_ONNX_ENABLE_PYTHON=ON -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF -DSHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION=${SHERPA_ONNX_LINUX_ARM64_GPU_ONNXRUNTIME_VERSION} -DCMAKE_BUILD_TYPE=Release"
-
+# ── sherpa-onnx CUDA: official prebuilt wheels (do not compile on eval boxes) ──
+# JP5.1.1 = CUDA 11.4 / cp38; JP6.1 = CUDA 12 / cp310. Compiling with ORT 1.18.1
+# is JP6-only and fails cmake on JP5. Wheels match 4paradigm/phanthymotus.
+# COS key keeps the JetPack directory; filename '+' must stay literal for pip.
+ARG SHERPA_GPU_WHEEL_511=jp511/sherpa_onnx-1.13.6+cuda-cp38-cp38-linux_aarch64.whl
+ARG SHERPA_GPU_WHEEL_61=jp61/sherpa_onnx-1.13.6+cuda-cp310-cp310-linux_aarch64.whl
 RUN set -eux; \
-    export CMAKE_BUILD_PARALLEL_LEVEL=1 MAX_JOBS=1; \
-    mkdir -p /tmp/src && cd /tmp/src; \
-    if git clone --depth 1 --branch "${SHERPA_ONNX_REF}" "${SHERPA_ONNX_GIT_MIRROR}" sherpa-onnx \
-       || git clone --depth 1 --branch "${SHERPA_ONNX_REF}" "${SHERPA_ONNX_GIT}" sherpa-onnx; then \
-      echo "cloned ${SHERPA_ONNX_REF}"; \
-    else \
-      git clone --depth 1 "${SHERPA_ONNX_GIT_MIRROR}" sherpa-onnx \
-        || git clone --depth 1 "${SHERPA_ONNX_GIT}" sherpa-onnx; \
-    fi; \
-    cd sherpa-onnx; \
-    python3 setup.py build; \
-    mkdir -p build/sherpa_onnx/bin; \
-    for b in sherpa-onnx-microphone sherpa-onnx-alsa sherpa-onnx-offline sherpa-onnx-offline-tts; do \
-      if [ ! -e "build/sherpa_onnx/bin/$b" ]; then touch "build/sherpa_onnx/bin/$b"; fi; \
-    done; \
-    python3 setup.py bdist_wheel; \
-    pip3 install --no-cache-dir dist/*.whl; \
-    python3 -c "import sherpa_onnx; print('sherpa-onnx', getattr(sherpa_onnx,'__version__','?'), sherpa_onnx.__file__)"; \
-    rm -rf /tmp/src
-
-# ── Jetson onnxruntime-gpu (CUDA EP for melo_openepd) ───────────────
-# JuiceFS currently has cp310 wheel (JP6 / jp61-torch). JP5 (py3.8) needs a
-# matching wheel URL via --build-arg when available.
-ARG ONNXRUNTIME_GPU_WHL_URL=http://172.28.4.81:34567/fanyi/phanthymotus_tts/onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl
-ARG ONNXRUNTIME_GPU_WHL_NAME=onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl
-RUN pip3 uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true; \
-    PYTAG=$(python3 -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')"); \
-    echo "python_tag=${PYTAG} wheel=${ONNXRUNTIME_GPU_WHL_NAME}"; \
-    if echo "${ONNXRUNTIME_GPU_WHL_NAME}" | grep -q "${PYTAG}"; then \
-      python3 -c "import os,urllib.request; url='${ONNXRUNTIME_GPU_WHL_URL}'; name='${ONNXRUNTIME_GPU_WHL_NAME}'; path='/tmp/'+name; print('downloading', url); urllib.request.urlretrieve(url, path); print('bytes', os.path.getsize(path))" && \
-      pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
-        coloredlogs flatbuffers packaging protobuf sympy humanfriendly mpmath && \
-      pip3 install --no-cache-dir --no-deps "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
-      rm -f "/tmp/${ONNXRUNTIME_GPU_WHL_NAME}" && \
-      python3 -c "import onnxruntime as ort; p=ort.get_available_providers(); print('onnxruntime', ort.__version__, 'providers=', p); assert 'CUDAExecutionProvider' in p, p"; \
-    else \
-      echo "WARN: wheel tag mismatch for ${PYTAG}; install CPU onnxruntime fallback"; \
-      pip3 install --no-cache-dir -i ${PYPI_MIRROR} onnxruntime || true; \
-    fi
+    case "${JP_VERSION}" in \
+      511) WHEEL="${SHERPA_GPU_WHEEL_511}" ;; \
+      61) WHEEL="${SHERPA_GPU_WHEEL_61}" ;; \
+      *) echo "unsupported JP_VERSION=${JP_VERSION}"; exit 1 ;; \
+    esac; \
+    FILE="$(basename "${WHEEL}")"; \
+    echo "[build] sherpa-onnx GPU wheel jp${JP_VERSION}: ${WHEEL}"; \
+    python3 -c "import urllib.request, urllib.parse, sys; key, dest = sys.argv[1], sys.argv[2]; urllib.request.urlretrieve('https://agi-phanthy-dev-1252788780.cos.ap-beijing.myqcloud.com/public/sherpa-onnx/' + urllib.parse.quote(key), dest)" \
+      "${WHEEL}" "/tmp/${FILE}"; \
+    pip3 install --no-cache-dir "/tmp/${FILE}"; \
+    rm -f "/tmp/${FILE}"; \
+    python3 -c "import sherpa_onnx, pathlib; lib = pathlib.Path(sherpa_onnx.__file__).parent / 'lib' / 'libonnxruntime_providers_cuda.so'; assert lib.is_file(), 'CUDA provider missing from the installed wheel'; print('sherpa-onnx', sherpa_onnx.__version__, 'with CUDA provider')"
 
 # Melo OpenEPD english.g2p needs NLTK data at runtime
 ENV NLTK_DATA=/usr/share/nltk_data

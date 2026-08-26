@@ -21,8 +21,8 @@ plugins:
     enabled: true
     # Matcha e500: kai and lufeng are separate JuiceFS tars. Vocos is inside each tar.
     backend: matcha
-    model_name: tts_matcha_kai
-    model_dir: /models/matcha-kai-16k-e500
+    model_name: tts_matcha_lufeng
+    model_dir: /models/matcha-lufeng-16k-e500
     hw_provider: cuda
     num_threads: 2
     speaker_id: 0
