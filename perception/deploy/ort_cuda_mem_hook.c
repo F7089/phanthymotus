@@ -6,9 +6,10 @@
  *    fallback, with engine cache. Acoustic stays CUDA. GetModelType()
  *    probes vocos on CPU (no CUDA append) and is left alone.
  *
+ * Patch the canonical OrtApi table in libonnxruntime in-place. A private copy
+ * returned from OrtGetApiBase is ignored by the TTS process (torch DEEPBIND).
+ *
  * OrtApi 1.16.0 slot indices (aarch64, from onnxruntime_c_api.h ORT_API_VERSION 16).
- * First three members are CreateStatus / GetErrorCode / GetErrorMessage; skipping
- * them made every later index off-by-3, so CreateSession never fired.
  *
  * Env:
  *   TTS_VOCOS_TRT=1                 default on
@@ -19,11 +20,14 @@
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <errno.h>
 #include <link.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #define ORT_API_SLOTS 266
 #define IDX_CREATE_SESSION 7
@@ -79,8 +83,9 @@ typedef void (*fn_release_trt)(OrtTensorRTProviderOptionsV2 *);
 
 static const OrtApiBase *(*real_OrtGetApiBase)(void);
 static const void *(*real_GetApi)(uint32_t);
+static void *(*real_dlopen)(const char *, int);
 static OrtApiBase g_base;
-static void *g_api_copy[ORT_API_SLOTS];
+static int g_table_patched;
 static fn_cuda_v1 orig_cuda_v1;
 static fn_cuda_v2 orig_cuda_v2;
 static fn_create_cuda orig_create_cuda;
@@ -283,7 +288,15 @@ static int find_ort_cb(struct dl_phdr_info *info, size_t size, void *data) {
   return 0;
 }
 
-static void *load_ort_handle(void) {
+static void *do_dlopen(const char *path, int flags) {
+  if (!real_dlopen)
+    real_dlopen = (void *(*)(const char *, int))dlsym(RTLD_NEXT, "dlopen");
+  if (!real_dlopen)
+    return NULL;
+  return real_dlopen(path, flags);
+}
+
+static void *load_ort_handle(int open_if_missing) {
   const char *path = NULL;
   static const char *cands[] = {
       "libonnxruntime.so.1.16.0",
@@ -298,61 +311,122 @@ static void *load_ort_handle(void) {
   void *h;
   dl_iterate_phdr(find_ort_cb, &path);
   if (path && path[0]) {
-    h = dlopen(path, RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL);
+    h = do_dlopen(path, RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL);
     if (h)
       return h;
-    h = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-    if (h)
-      return h;
+    if (open_if_missing) {
+      h = do_dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+      if (h)
+        return h;
+    }
   }
+  if (!open_if_missing)
+    return NULL;
   for (i = 0; cands[i]; i++) {
-    h = dlopen(cands[i], RTLD_NOW | RTLD_GLOBAL);
+    h = do_dlopen(cands[i], RTLD_NOW | RTLD_GLOBAL);
     if (h)
       return h;
   }
   return NULL;
 }
 
-static const void *hooked_GetApi(uint32_t version) {
-  const void *real = real_GetApi(version);
-  if (!real)
-    return real;
-  memcpy(g_api_copy, real, sizeof(g_api_copy));
-  orig_create_session = (fn_create_session)g_api_copy[IDX_CREATE_SESSION];
+static int mprotect_rw(void *p, size_t n) {
+  long ps = sysconf(_SC_PAGESIZE);
+  uintptr_t start, end;
+  if (ps <= 0)
+    ps = 4096;
+  start = (uintptr_t)p & ~(uintptr_t)(ps - 1);
+  end = ((uintptr_t)p + n + (uintptr_t)ps - 1) & ~(uintptr_t)(ps - 1);
+  if (mprotect((void *)start, (size_t)(end - start), PROT_READ | PROT_WRITE) == 0)
+    return 0;
+  return mprotect((void *)start, (size_t)(end - start),
+                  PROT_READ | PROT_WRITE | PROT_EXEC);
+}
+
+static void capture_origs(void **slots) {
+  if (slots[IDX_CREATE_SESSION] == (void *)hooked_create_session)
+    return;
+  orig_create_session = (fn_create_session)slots[IDX_CREATE_SESSION];
   orig_create_session_from_array =
-      (fn_create_session_from_array)g_api_copy[IDX_CREATE_SESSION_FROM_ARRAY];
+      (fn_create_session_from_array)slots[IDX_CREATE_SESSION_FROM_ARRAY];
   orig_create_session_opts =
-      (fn_create_session_opts)g_api_copy[IDX_CREATE_SESSION_OPTS];
+      (fn_create_session_opts)slots[IDX_CREATE_SESSION_OPTS];
   orig_release_session_opts =
-      (fn_release_session_opts)g_api_copy[IDX_RELEASE_SESSION_OPTS];
-  orig_set_intra = (fn_set_threads)g_api_copy[IDX_SET_INTRA];
-  orig_set_inter = (fn_set_threads)g_api_copy[IDX_SET_INTER];
-  orig_cuda_v1 = (fn_cuda_v1)g_api_copy[IDX_CUDA_V1];
-  orig_cuda_v2 = (fn_cuda_v2)g_api_copy[IDX_CUDA_V2];
-  orig_create_cuda = (fn_create_cuda)g_api_copy[IDX_CREATE_CUDA];
-  orig_update_cuda = (fn_update_cuda)g_api_copy[IDX_UPDATE_CUDA];
-  orig_release_cuda = (fn_release_cuda)g_api_copy[IDX_RELEASE_CUDA];
-  orig_trt_v2 = (fn_trt_v2)g_api_copy[IDX_TRT_V2];
-  orig_create_trt = (fn_create_trt)g_api_copy[IDX_CREATE_TRT];
-  orig_update_trt = (fn_update_trt)g_api_copy[IDX_UPDATE_TRT];
-  orig_release_trt = (fn_release_trt)g_api_copy[IDX_RELEASE_TRT];
-  g_api_copy[IDX_CUDA_V1] = (void *)hooked_cuda_v1;
-  g_api_copy[IDX_CUDA_V2] = (void *)hooked_cuda_v2;
-  g_api_copy[IDX_CREATE_SESSION] = (void *)hooked_create_session;
-  g_api_copy[IDX_CREATE_SESSION_FROM_ARRAY] =
-      (void *)hooked_create_session_from_array;
+      (fn_release_session_opts)slots[IDX_RELEASE_SESSION_OPTS];
+  orig_set_intra = (fn_set_threads)slots[IDX_SET_INTRA];
+  orig_set_inter = (fn_set_threads)slots[IDX_SET_INTER];
+  orig_cuda_v1 = (fn_cuda_v1)slots[IDX_CUDA_V1];
+  orig_cuda_v2 = (fn_cuda_v2)slots[IDX_CUDA_V2];
+  orig_create_cuda = (fn_create_cuda)slots[IDX_CREATE_CUDA];
+  orig_update_cuda = (fn_update_cuda)slots[IDX_UPDATE_CUDA];
+  orig_release_cuda = (fn_release_cuda)slots[IDX_RELEASE_CUDA];
+  orig_trt_v2 = (fn_trt_v2)slots[IDX_TRT_V2];
+  orig_create_trt = (fn_create_trt)slots[IDX_CREATE_TRT];
+  orig_update_trt = (fn_update_trt)slots[IDX_UPDATE_TRT];
+  orig_release_trt = (fn_release_trt)slots[IDX_RELEASE_TRT];
+}
+
+static int patch_ort_table(void *api, uint32_t version) {
+  void **slots = (void **)api;
+  if (!api)
+    return 0;
+  if (slots[IDX_CREATE_SESSION] == (void *)hooked_create_session) {
+    g_table_patched = 1;
+    return 1;
+  }
+  capture_origs(slots);
+  if (mprotect_rw(api, sizeof(void *) * ORT_API_SLOTS) != 0) {
+    fprintf(stderr, "[ort_cuda_hook] mprotect failed errno=%d api=%p\n", errno,
+            api);
+    fflush(stderr);
+    return 0;
+  }
+  slots[IDX_CREATE_SESSION] = (void *)hooked_create_session;
+  slots[IDX_CREATE_SESSION_FROM_ARRAY] = (void *)hooked_create_session_from_array;
+  slots[IDX_CUDA_V1] = (void *)hooked_cuda_v1;
+  slots[IDX_CUDA_V2] = (void *)hooked_cuda_v2;
+  g_table_patched = 1;
   fprintf(stderr,
-          "[ort_cuda_hook] GetApi patched ver=%u create_session=%p cuda_v1=%p "
-          "trt_v2=%p\n",
-          version, (void *)orig_create_session, (void *)orig_cuda_v1,
+          "[ort_cuda_hook] INPLACE patch ver=%u api=%p create_session orig=%p "
+          "cuda_v1=%p trt_v2=%p\n",
+          version, api, (void *)orig_create_session, (void *)orig_cuda_v1,
           (void *)orig_trt_v2);
   fflush(stderr);
-  return g_api_copy;
+  return 1;
+}
+
+static int try_patch_loaded_ort(void) {
+  void *h;
+  const OrtApiBase *(*get_base)(void);
+  const OrtApiBase *base;
+  const void *api;
+  if (g_table_patched)
+    return 1;
+  h = load_ort_handle(0);
+  if (!h)
+    return 0;
+  get_base = (const OrtApiBase *(*)(void))dlsym(h, "OrtGetApiBase");
+  if (!get_base)
+    return 0;
+  base = get_base();
+  if (!base || !base->GetApi)
+    return 0;
+  real_OrtGetApiBase = get_base;
+  real_GetApi = base->GetApi;
+  api = base->GetApi(16);
+  return patch_ort_table((void *)api, 16);
+}
+
+static const void *hooked_GetApi(uint32_t version) {
+  const void *real = real_GetApi ? real_GetApi(version) : NULL;
+  if (real)
+    patch_ort_table((void *)real, version);
+  return real;
 }
 
 const OrtApiBase *OrtGetApiBase(void) {
   if (!real_OrtGetApiBase) {
-    void *h = load_ort_handle();
+    void *h = load_ort_handle(1);
     if (!h) {
       fprintf(stderr, "[ort_cuda_hook] dlopen libonnxruntime failed: %s\n",
               dlerror());
@@ -370,12 +444,24 @@ const OrtApiBase *OrtGetApiBase(void) {
   if (!real)
     return real;
   real_GetApi = real->GetApi;
+  if (real->GetApi)
+    patch_ort_table((void *)real->GetApi(16), 16);
   g_base.GetApi = hooked_GetApi;
   g_base.GetVersionString = real->GetVersionString;
   return &g_base;
 }
 
+void *dlopen(const char *file, int flags) {
+  void *h = do_dlopen(file, flags);
+  if (!g_table_patched)
+    try_patch_loaded_ort();
+  return h;
+}
+
 __attribute__((constructor)) static void hook_init(void) {
   setvbuf(stderr, NULL, _IONBF, 0);
+  if (!real_dlopen)
+    real_dlopen = (void *(*)(const char *, int))dlsym(RTLD_NEXT, "dlopen");
   fprintf(stderr, "[ort_cuda_hook] loaded (CUDA V2 knobs + vocos TRT)\n");
+  try_patch_loaded_ort();
 }
