@@ -52,10 +52,11 @@ RUN cd /ros_ws && \
     . /opt/ros/humble/install/setup.bash && \
     colcon build --packages-select audio_msgs --cmake-args -DCMAKE_BUILD_TYPE=Release
 
-# ── Python deps (base + Melo OpenEPD / Piper G2P) ─────────────────
+# ── Python deps ────────────────────────────────────────────────────
+# --ignore-installed: JP5 base PyYAML is distutils; pip cannot uninstall it.
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
-    pyyaml requests websockets webrtcvad websocket-client dashscope psutil \
-    wetext jieba pypinyin cn2an inflect g2p-en nltk && \
+    --ignore-installed pyyaml requests websockets webrtcvad websocket-client dashscope psutil \
+    wetext kaldifst jieba pypinyin cn2an inflect g2p-en nltk && \
     pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
 
 # ── HTMSG deps (KISS-ICP + future semantic) ──────────────────────
@@ -113,6 +114,11 @@ RUN set -eux; \
         || git clone --depth 1 "${SHERPA_ONNX_GIT}" sherpa-onnx; \
     fi; \
     cd sherpa-onnx; \
+    python3 setup.py build; \
+    mkdir -p build/sherpa_onnx/bin; \
+    for b in sherpa-onnx-microphone sherpa-onnx-alsa sherpa-onnx-offline sherpa-onnx-offline-tts; do \
+      if [ ! -e "build/sherpa_onnx/bin/$b" ]; then touch "build/sherpa_onnx/bin/$b"; fi; \
+    done; \
     python3 setup.py bdist_wheel; \
     pip3 install --no-cache-dir dist/*.whl; \
     python3 -c "import sherpa_onnx; print('sherpa-onnx', getattr(sherpa_onnx,'__version__','?'), sherpa_onnx.__file__)"; \
