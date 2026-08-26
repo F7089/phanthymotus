@@ -174,12 +174,17 @@ class VocosTRT:
             raise RuntimeError("TensorRT deserialize failed: %s" % self._engine_path)
         self._engine = engine
         self._ctx = engine.create_execution_context()
-        self._trt10 = hasattr(engine, "num_io_tensors")
+        try:
+            major = int(str(trt_ver).split(".")[0])
+        except ValueError:
+            major = 0
+        # 8.5 may expose num_io_tensors; execute_v2/bindings is the real 8.x path.
+        self._trt10 = major >= 10
         log.info(
-            "[tts] vocos TensorRT runtime engine=%s trt=%s io10=%s input=%s",
+            "[tts] vocos TensorRT runtime engine=%s trt=%s api=%s input=%s",
             self._engine_path,
             trt_ver,
-            self._trt10,
+            "10" if self._trt10 else "8",
             self._inp,
         )
 
@@ -206,6 +211,7 @@ class VocosTRT:
         mel = np.ascontiguousarray(mel, dtype=np.float32)
         if mel.ndim != 3 or mel.shape[0] != 1 or mel.shape[1] != N_MELS:
             raise RuntimeError("vocos mel expected (1, %s, T), got %s" % (N_MELS, mel.shape))
+        log.info("[tts] vocos infer start shape=%s api=%s", mel.shape, "10" if self._trt10 else "8")
         if self._trt10:
             mag, x, y = self._infer10(mel)
         else:
@@ -214,7 +220,6 @@ class VocosTRT:
 
     def _infer8(self, mel: np.ndarray):
         engine, ctx, cuda = self._engine, self._ctx, self._cudart
-        t = int(mel.shape[2])
         in_idx = None
         for i in range(engine.num_bindings):
             if engine.binding_is_input(i) and engine.get_binding_name(i) == self._inp:
