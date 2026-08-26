@@ -12,22 +12,20 @@ export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
 log "starting (LD_PRELOAD=${LD_PRELOAD})"
 log "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-<unset>} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-<unset>}"
 
-# Prefer onnxruntime CUDA check over torch: avoids loading PyTorch CUDA
-# (~40–50MiB) when TTS inference is ORT-only. Same GPU requirement.
+# Matcha uses sherpa-onnx's bundled CUDA ORT, not pip onnxruntime-gpu.
+# Checking `import onnxruntime` would exit 125 after the official sherpa wheel.
 if [ "${TTS_REQUIRE_CUDA:-1}" = "1" ]; then
-    log "checking CUDA via onnxruntime..."
+    log "checking CUDA via sherpa-onnx..."
     if ! cuda_ok="$(python3 - <<'ORTPY'
-import sys
-try:
-    import onnxruntime as ort
-except Exception:
-    sys.exit(1)
-if "CUDAExecutionProvider" not in ort.get_available_providers():
-    sys.exit(1)
-print("CUDAExecutionProvider")
+import pathlib
+import sherpa_onnx
+lib = pathlib.Path(sherpa_onnx.__file__).parent / "lib" / "libonnxruntime_providers_cuda.so"
+if not lib.is_file():
+    raise SystemExit(1)
+print(str(lib))
 ORTPY
     )"; then
-        log "FATAL: hw_provider=cuda but CUDAExecutionProvider is not available."
+        log "FATAL: hw_provider=cuda but sherpa CUDA provider library is missing."
         log "judgeflow must start the container with GPU runtime, for example:"
         log "  docker run --runtime nvidia \\"
         log "    -e NVIDIA_VISIBLE_DEVICES=all \\"
