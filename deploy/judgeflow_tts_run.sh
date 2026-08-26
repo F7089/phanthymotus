@@ -19,6 +19,9 @@ WS_PORT="${4:?WS_PORT required}"
 
 docker rm -f "${NAME}" >/dev/null 2>&1 || true
 
+CACHE_HOST="${TTS_VOCOS_TRT_CACHE_HOST:-/tmp/vocos_trt_cache}"
+mkdir -p "${CACHE_HOST}"
+
 RUN_ARGS=(
     docker run -d
     --name "${NAME}"
@@ -29,12 +32,15 @@ RUN_ARGS=(
     -e NVIDIA_DRIVER_CAPABILITIES=compute,utility
     -e MCP_PORT="${MCP_PORT}"
     -e WS_PORT="${WS_PORT}"
-    -e TTS_DISABLE_TRT="${TTS_DISABLE_TRT:-1}"
+    -e TTS_DISABLE_TRT="${TTS_DISABLE_TRT:-0}"
+    -e TTS_VOCOS_TRT="${TTS_VOCOS_TRT:-1}"
+    -e TTS_VOCOS_TRT_CACHE="${TTS_VOCOS_TRT_CACHE:-/opt/vocos_trt_cache}"
     -e TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     -e TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     -e TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"
     -e TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-256}"
     -e TTS_SHERPA_ORT_CONFIG="${TTS_SHERPA_ORT_CONFIG:-/deploy/ort_cuda_jp5.config}"
+    -v "${CACHE_HOST}:/opt/vocos_trt_cache"
 )
 
 # Optional host model cache (if mounted on eval Jetson)

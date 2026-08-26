@@ -28,9 +28,26 @@ log "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-<unset>} FASTDDS_BUILTIN_TRANSPORTS=${FASTDD
 # Matcha uses sherpa-onnx's bundled CUDA ORT, not pip onnxruntime-gpu.
 # Checking `import onnxruntime` would exit 125 after the official sherpa wheel.
 #
-# JP5: JetPack is CUDA 11.4 + TensorRT 8.5. Do not keep both EPs resident.
-# Rename sherpa's TensorRT provider .so so ORT cannot register it.
-if [ "${TTS_DISABLE_TRT:-1}" = "1" ]; then
+# Vocos TRT (③): keep TensorRT EP .so. Acoustic stays CUDA.
+# TTS_DISABLE_TRT=1 would rename the provider and kill vocos TRT.
+if [ "${TTS_VOCOS_TRT:-1}" = "1" ]; then
+  export TTS_DISABLE_TRT="${TTS_DISABLE_TRT:-0}"
+  export TTS_VOCOS_TRT_CACHE="${TTS_VOCOS_TRT_CACHE:-/opt/vocos_trt_cache}"
+  mkdir -p "${TTS_VOCOS_TRT_CACHE}"
+  log "vocos TRT enabled, cache=${TTS_VOCOS_TRT_CACHE}"
+  python3 - <<'TRTPY' || true
+import pathlib, sherpa_onnx
+libdir = pathlib.Path(sherpa_onnx.__file__).resolve().parent / "lib"
+for p in libdir.glob("libonnxruntime_providers_tensorrt*.disabled"):
+    dest = p.with_name(p.name[: -len(".disabled")])
+    try:
+        p.rename(dest)
+        print("restored", dest.name)
+    except OSError as e:
+        print("skip", p.name, e)
+print("trt_so", sorted(x.name for x in libdir.glob("libonnxruntime_providers_tensorrt*")))
+TRTPY
+elif [ "${TTS_DISABLE_TRT:-1}" = "1" ]; then
     log "disabling TensorRT execution provider (TTS_DISABLE_TRT=1)..."
     python3 - <<'TRTPY' || true
 import pathlib
@@ -48,10 +65,6 @@ for p in libdir.glob("libonnxruntime_providers_tensorrt*"):
     except OSError as e:
         print("skip", p.name, e)
 print("tensorrt_disabled", n)
-print("sherpa_lib", libdir)
-print("so", sorted(x.name for x in libdir.glob("libonnxruntime_providers_*")))
-if n == 0:
-    print("note: no TensorRT provider .so in sherpa-onnx; dual-runtime is not this wheel")
 TRTPY
 fi
 

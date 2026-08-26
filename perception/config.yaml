@@ -24,8 +24,7 @@ plugins:
     model_name: tts_matcha_kai
     model_dir: /models/matcha-kai-16k-e500
     hw_provider: cuda
-    # CUDA EP only. Do not set tensorrt — JP5 TRT 8.5 + ORT CUDA dual runtime
-    # is the 1.4GB suspect. TensorRT provider .so is disabled at entrypoint.
+    # Acoustic: CUDA EP. Vocos: TensorRT 8.5 + engine cache (TTS_VOCOS_TRT=1).
     num_threads: 2
     speaker_id: 0
     speed: 1.0

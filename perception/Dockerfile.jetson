@@ -109,9 +109,7 @@ RUN set -eux; \
       "${WHEEL}" "/tmp/${FILE}"; \
     pip3 install --no-cache-dir "/tmp/${FILE}"; \
     rm -f "/tmp/${FILE}"; \
-    python3 -c "import sherpa_onnx, pathlib; lib = pathlib.Path(sherpa_onnx.__file__).parent / 'lib' / 'libonnxruntime_providers_cuda.so'; assert lib.is_file(), 'CUDA provider missing from the installed wheel'; print('sherpa-onnx', sherpa_onnx.__version__, 'with CUDA provider')"; \
-    python3 -c "import pathlib, sherpa_onnx; d=pathlib.Path(sherpa_onnx.__file__).resolve().parent/'lib'; ps=[p for p in d.glob('libonnxruntime_providers_tensorrt*') if not str(p).endswith('.disabled')]; \
-[p.rename(p.with_name(p.name+'.disabled')) for p in ps]; print('tensorrt_disabled', len(ps))"
+    python3 -c "import sherpa_onnx, pathlib; lib = pathlib.Path(sherpa_onnx.__file__).parent / 'lib' / 'libonnxruntime_providers_cuda.so'; assert lib.is_file(), 'CUDA provider missing from the installed wheel'; print('sherpa-onnx', sherpa_onnx.__version__, 'with CUDA provider')"
 
 # Melo OpenEPD english.g2p needs NLTK data at runtime
 ENV NLTK_DATA=/usr/share/nltk_data
@@ -144,14 +142,17 @@ RUN rm -f /deploy/libort_cuda_mem_hook.so && \
               /deploy/judgeflow_tts_run.sh && \
     python3 -c "import ctypes, pathlib, sys; p='/usr/local/lib/libort_cuda_mem_hook.so'; b=pathlib.Path(p).read_bytes(); \
 bad=[x for x in (b'GLIBC_2.34', b'GLIBC_2.35', b'GLIBC_2.36') if x in b]; \
-sys.exit('hook ELF requests '+str(bad)) if bad else None; ctypes.CDLL(p); print('ort_cuda_mem_hook_ok')"
+sys.exit('hook ELF requests '+str(bad)) if bad else None; ctypes.CDLL(p); print('ort_cuda_mem_hook_ok')" && \
+    mkdir -p /opt/vocos_trt_cache
 
 EXPOSE 15720
 EXPOSE 15721
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    TTS_DISABLE_TRT=1 \
+    TTS_DISABLE_TRT=0 \
+    TTS_VOCOS_TRT=1 \
+    TTS_VOCOS_TRT_CACHE=/opt/vocos_trt_cache \
     TTS_ORT_USE_TRT=0 \
     TTS_ORT_CUDNN_MAX_WORKSPACE=0 \
     TTS_ORT_ARENA_EXTEND=kSameAsRequested \

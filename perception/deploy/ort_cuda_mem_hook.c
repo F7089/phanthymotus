@@ -1,21 +1,19 @@
 /*
  * LD_PRELOAD hook for sherpa-onnx 1.13.6 (ORT 1.16.0).
  *
- * sherpa only calls CUDA EP V1 (device_id + Heuristic). Defaults are:
- *   gpu_mem_limit = SIZE_MAX
- *   arena_extend_strategy = kNextPowerOfTwo
- *   cudnn_conv_use_max_workspace = 1   (V2 default; can add GBs)
+ * 1) All CUDA EP V1 appends become CUDA V2 with JP5 arena knobs.
+ * 2) Vocos CreateSession (after CUDA append) uses TensorRT EP + CUDA
+ *    fallback, with engine cache. Acoustic stays CUDA. GetModelType()
+ *    probes vocos on CPU (no CUDA append) and is left alone.
  *
- * Matcha is two sessions (acoustic + vocos). Each gets its own CUDA arena.
- * This intercepts OrtGetApiBase and rewrites AppendExecutionProvider_CUDA
- * to CUDA EP V2 with JP5-friendly knobs.
- *
- * Slots below are OrtApi 1.16.0 function-pointer indices (aarch64).
+ * OrtApi 1.16.0 slot indices (aarch64, counted from onnxruntime_c_api.h).
  *
  * Env:
- *   TTS_ORT_GPU_MEM_LIMIT_MB     default 256  (per session arena cap)
- *   TTS_ORT_ARENA_EXTEND         default kSameAsRequested
- *   TTS_ORT_CUDNN_MAX_WORKSPACE  default 0
+ *   TTS_VOCOS_TRT=1                 default on
+ *   TTS_VOCOS_TRT_CACHE             default /opt/vocos_trt_cache
+ *   TTS_ORT_GPU_MEM_LIMIT_MB        default 256
+ *   TTS_ORT_ARENA_EXTEND            default kSameAsRequested
+ *   TTS_ORT_CUDNN_MAX_WORKSPACE     default 0
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -24,16 +22,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ORT_API_SLOTS 264
-#define IDX_CUDA_V1 150
-#define IDX_CUDA_V2 202
-#define IDX_CREATE_CUDA 203
-#define IDX_UPDATE_CUDA 204
-#define IDX_RELEASE_CUDA 206
+#define ORT_API_SLOTS 261
+#define IDX_CREATE_SESSION 4
+#define IDX_CREATE_SESSION_OPTS 7
+#define IDX_SET_INTRA 21
+#define IDX_SET_INTER 22
+#define IDX_CUDA_V1 149
+#define IDX_TRT_V2 167
+#define IDX_CREATE_TRT 168
+#define IDX_UPDATE_TRT 169
+#define IDX_RELEASE_TRT 171
+#define IDX_CUDA_V2 201
+#define IDX_CREATE_CUDA 202
+#define IDX_UPDATE_CUDA 203
+#define IDX_RELEASE_CUDA 205
 
 typedef struct OrtStatus OrtStatus;
 typedef struct OrtSessionOptions OrtSessionOptions;
 typedef struct OrtCUDAProviderOptionsV2 OrtCUDAProviderOptionsV2;
+typedef struct OrtTensorRTProviderOptionsV2 OrtTensorRTProviderOptionsV2;
 
 typedef struct {
   const void *(*GetApi)(uint32_t);
@@ -48,6 +55,17 @@ typedef OrtStatus *(*fn_update_cuda)(OrtCUDAProviderOptionsV2 *,
                                      const char *const *, const char *const *,
                                      size_t);
 typedef void (*fn_release_cuda)(OrtCUDAProviderOptionsV2 *);
+typedef OrtStatus *(*fn_create_session)(const void *, const char *,
+                                        const OrtSessionOptions *, void **);
+typedef OrtStatus *(*fn_create_session_opts)(OrtSessionOptions **);
+typedef OrtStatus *(*fn_set_threads)(OrtSessionOptions *, int);
+typedef OrtStatus *(*fn_trt_v2)(OrtSessionOptions *,
+                                const OrtTensorRTProviderOptionsV2 *);
+typedef OrtStatus *(*fn_create_trt)(OrtTensorRTProviderOptionsV2 **);
+typedef OrtStatus *(*fn_update_trt)(OrtTensorRTProviderOptionsV2 *,
+                                    const char *const *, const char *const *,
+                                    size_t);
+typedef void (*fn_release_trt)(OrtTensorRTProviderOptionsV2 *);
 
 static const OrtApiBase *(*real_OrtGetApiBase)(void);
 static const void *(*real_GetApi)(uint32_t);
@@ -58,6 +76,15 @@ static fn_cuda_v2 orig_cuda_v2;
 static fn_create_cuda orig_create_cuda;
 static fn_update_cuda orig_update_cuda;
 static fn_release_cuda orig_release_cuda;
+static fn_create_session orig_create_session;
+static fn_create_session_opts orig_create_session_opts;
+static fn_set_threads orig_set_intra;
+static fn_set_threads orig_set_inter;
+static fn_trt_v2 orig_trt_v2;
+static fn_create_trt orig_create_trt;
+static fn_update_trt orig_update_trt;
+static fn_release_trt orig_release_trt;
+static int g_after_cuda_append;
 
 static long env_long(const char *key, long def) {
   const char *v = getenv(key);
@@ -75,6 +102,26 @@ static const char *env_str(const char *key, const char *def) {
   if (!v || !v[0])
     return def;
   return v;
+}
+
+static int env_on(const char *key, int def) {
+  const char *v = getenv(key);
+  if (!v || !v[0])
+    return def;
+  return !(v[0] == '0' && v[1] == 0);
+}
+
+static int path_is_vocos(const char *p) {
+  const char *s;
+  if (!p)
+    return 0;
+  for (s = p; *s; s++) {
+    if ((s[0] == 'v' || s[0] == 'V') && (s[1] == 'o' || s[1] == 'O') &&
+        (s[2] == 'c' || s[2] == 'C') && (s[3] == 'o' || s[3] == 'O') &&
+        (s[4] == 's' || s[4] == 'S'))
+      return 1;
+  }
+  return 0;
 }
 
 static OrtStatus *append_cuda_v2(OrtSessionOptions *so) {
@@ -123,15 +170,78 @@ static OrtStatus *append_cuda_v2(OrtSessionOptions *so) {
   return st;
 }
 
+static OrtStatus *append_trt_v2(OrtSessionOptions *so) {
+  if (!orig_create_trt || !orig_update_trt || !orig_trt_v2 || !orig_release_trt) {
+    fprintf(stderr, "[ort_cuda_hook] TRT V2 slots empty; vocos stays CUDA\n");
+    return NULL;
+  }
+  const char *cache = env_str("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache");
+  OrtTensorRTProviderOptionsV2 *trt = NULL;
+  OrtStatus *st = orig_create_trt(&trt);
+  if (st)
+    return st;
+  const char *keys[] = {
+      "device_id",
+      "trt_max_workspace_size",
+      "trt_fp16_enable",
+      "trt_engine_cache_enable",
+      "trt_engine_cache_path",
+      "trt_min_subgraph_size",
+  };
+  const char *vals[] = {"0", "268435456", "1", "1", cache, "5"};
+  st = orig_update_trt(trt, keys, vals, 6);
+  if (st) {
+    orig_release_trt(trt);
+    return st;
+  }
+  st = orig_trt_v2(so, trt);
+  orig_release_trt(trt);
+  fprintf(stderr, "[ort_cuda_hook] vocos TensorRT cache=%s fp16=1 workspace=256MB\n",
+          cache);
+  return st;
+}
+
 static OrtStatus *hooked_cuda_v1(OrtSessionOptions *so, const void *ignored) {
   (void)ignored;
+  g_after_cuda_append = 1;
   return append_cuda_v2(so);
 }
 
 static OrtStatus *hooked_cuda_v2(OrtSessionOptions *so,
                                 const OrtCUDAProviderOptionsV2 *ignored) {
   (void)ignored;
+  g_after_cuda_append = 1;
   return append_cuda_v2(so);
+}
+
+static OrtStatus *hooked_create_session(const void *env, const char *path,
+                                        const OrtSessionOptions *opts,
+                                        void **out) {
+  int want_trt = env_on("TTS_VOCOS_TRT", 1) && path_is_vocos(path) &&
+                 g_after_cuda_append;
+  g_after_cuda_append = 0;
+  if (!want_trt || !orig_create_session_opts || !orig_create_session)
+    return orig_create_session(env, path, opts, out);
+
+  OrtSessionOptions *so = NULL;
+  OrtStatus *st = orig_create_session_opts(&so);
+  if (st)
+    return orig_create_session(env, path, opts, out);
+  if (orig_set_intra)
+    orig_set_intra(so, 2);
+  if (orig_set_inter)
+    orig_set_inter(so, 1);
+
+  st = append_trt_v2(so);
+  if (st) {
+    fprintf(stderr, "[ort_cuda_hook] vocos TRT append failed; using CUDA only\n");
+    append_cuda_v2(so);
+  } else {
+    /* CUDA EP fallback for unsupported nodes */
+    append_cuda_v2(so);
+  }
+  fprintf(stderr, "[ort_cuda_hook] vocos session path=%s\n", path ? path : "");
+  return orig_create_session(env, path, so, out);
 }
 
 static const void *hooked_GetApi(uint32_t version) {
@@ -139,13 +249,23 @@ static const void *hooked_GetApi(uint32_t version) {
   if (!real)
     return real;
   memcpy(g_api_copy, real, sizeof(g_api_copy));
+  orig_create_session = (fn_create_session)g_api_copy[IDX_CREATE_SESSION];
+  orig_create_session_opts =
+      (fn_create_session_opts)g_api_copy[IDX_CREATE_SESSION_OPTS];
+  orig_set_intra = (fn_set_threads)g_api_copy[IDX_SET_INTRA];
+  orig_set_inter = (fn_set_threads)g_api_copy[IDX_SET_INTER];
   orig_cuda_v1 = (fn_cuda_v1)g_api_copy[IDX_CUDA_V1];
   orig_cuda_v2 = (fn_cuda_v2)g_api_copy[IDX_CUDA_V2];
   orig_create_cuda = (fn_create_cuda)g_api_copy[IDX_CREATE_CUDA];
   orig_update_cuda = (fn_update_cuda)g_api_copy[IDX_UPDATE_CUDA];
   orig_release_cuda = (fn_release_cuda)g_api_copy[IDX_RELEASE_CUDA];
+  orig_trt_v2 = (fn_trt_v2)g_api_copy[IDX_TRT_V2];
+  orig_create_trt = (fn_create_trt)g_api_copy[IDX_CREATE_TRT];
+  orig_update_trt = (fn_update_trt)g_api_copy[IDX_UPDATE_TRT];
+  orig_release_trt = (fn_release_trt)g_api_copy[IDX_RELEASE_TRT];
   g_api_copy[IDX_CUDA_V1] = (void *)hooked_cuda_v1;
   g_api_copy[IDX_CUDA_V2] = (void *)hooked_cuda_v2;
+  g_api_copy[IDX_CREATE_SESSION] = (void *)hooked_create_session;
   return g_api_copy;
 }
 
@@ -169,5 +289,5 @@ const OrtApiBase *OrtGetApiBase(void) {
 }
 
 __attribute__((constructor)) static void hook_init(void) {
-  fprintf(stderr, "[ort_cuda_hook] loaded (ORT 1.16 CUDA V2 mem knobs)\n");
+  fprintf(stderr, "[ort_cuda_hook] loaded (CUDA V2 knobs + vocos TRT)\n");
 }
