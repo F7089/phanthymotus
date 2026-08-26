@@ -17,6 +17,7 @@
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <link.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -244,6 +245,45 @@ static OrtStatus *hooked_create_session(const void *env, const char *path,
   return orig_create_session(env, path, so, out);
 }
 
+static int find_ort_cb(struct dl_phdr_info *info, size_t size, void *data) {
+  (void)size;
+  if (info->dlpi_name && strstr(info->dlpi_name, "libonnxruntime.so")) {
+    *(const char **)data = info->dlpi_name;
+    return 1;
+  }
+  return 0;
+}
+
+static void *load_ort_handle(void) {
+  const char *path = NULL;
+  static const char *cands[] = {
+      "libonnxruntime.so.1.16.0",
+      "libonnxruntime.so.1",
+      "/usr/local/lib/python3.8/dist-packages/sherpa_onnx/lib/"
+      "libonnxruntime.so.1.16.0",
+      "/usr/local/lib/python3.10/dist-packages/sherpa_onnx/lib/"
+      "libonnxruntime.so.1.16.0",
+      NULL,
+  };
+  int i;
+  void *h;
+  dl_iterate_phdr(find_ort_cb, &path);
+  if (path && path[0]) {
+    h = dlopen(path, RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL);
+    if (h)
+      return h;
+    h = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+    if (h)
+      return h;
+  }
+  for (i = 0; cands[i]; i++) {
+    h = dlopen(cands[i], RTLD_NOW | RTLD_GLOBAL);
+    if (h)
+      return h;
+  }
+  return NULL;
+}
+
 static const void *hooked_GetApi(uint32_t version) {
   const void *real = real_GetApi(version);
   if (!real)
@@ -271,8 +311,14 @@ static const void *hooked_GetApi(uint32_t version) {
 
 const OrtApiBase *OrtGetApiBase(void) {
   if (!real_OrtGetApiBase) {
+    void *h = load_ort_handle();
+    if (!h) {
+      fprintf(stderr, "[ort_cuda_hook] dlopen libonnxruntime failed: %s\n",
+              dlerror());
+      return NULL;
+    }
     real_OrtGetApiBase =
-        (const OrtApiBase *(*)(void))dlsym(RTLD_NEXT, "OrtGetApiBase");
+        (const OrtApiBase *(*)(void))dlsym(h, "OrtGetApiBase");
     if (!real_OrtGetApiBase) {
       fprintf(stderr, "[ort_cuda_hook] dlsym OrtGetApiBase failed: %s\n",
               dlerror());
