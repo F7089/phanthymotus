@@ -15,10 +15,10 @@ log "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-<unset>} FASTDDS_BUILTIN_TRANSPORTS=${FASTDD
 # Matcha uses sherpa-onnx's bundled CUDA ORT for acoustic only.
 # Vocos uses TensorRT Runtime (not ORT TensorRT EP). Keep sherpa's TRT EP
 # disabled so ORT does not load a second nvinfer path.
-export TTS_VOCOS_TRT="${TTS_VOCOS_TRT:-1}"
+export TTS_VOCOS_TRT="${TTS_VOCOS_TRT:-0}"
 export TTS_VOCOS_TRT_CACHE="${TTS_VOCOS_TRT_CACHE:-/opt/vocos_trt_cache}"
 mkdir -p "${TTS_VOCOS_TRT_CACHE}"
-log "vocos TensorRT runtime cache=${TTS_VOCOS_TRT_CACHE} enabled=${TTS_VOCOS_TRT}"
+log "vocos TensorRT runtime enabled=${TTS_VOCOS_TRT} (default off; JP5 dual-CUDA is lower mem)"
 
 if [ "${TTS_DISABLE_TRT:-1}" = "1" ]; then
     log "disabling sherpa ORT TensorRT EP (native vocos uses TensorRT Runtime)..."

@@ -94,10 +94,11 @@ def _piper_run(sess, ort_module, feeds):
 
 
 def _sherpa_provider(hw_provider: str) -> str:
-    """sherpa-onnx EP for Matcha acoustic / VITS / Kokoro. CUDA only.
+    """sherpa-onnx EP for Matcha/VITS/Kokoro. CUDA only.
 
-    Vocos does not use this: Matcha + TTS_VOCOS_TRT=1 runs Vocos on TensorRT
-    Runtime (see utils/vocos_trt.py), not an ORT TensorRT EP session.
+    JP5: Vocos TensorRT Runtime was tried and used more cgroup memory than
+    dual CUDA sessions; default is sherpa acoustic+vocos CUDA.
+    Optional: TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config
     """
     import os
 
@@ -707,7 +708,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
                 if os.path.exists(p):
                     rule_fsts.append(p)
 
-        vocos_trt = os.environ.get("TTS_VOCOS_TRT", "1") != "0"
+        vocos_trt = os.environ.get("TTS_VOCOS_TRT", "0") == "1"
         cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
         self._vocos = None
         if vocos_trt:
