@@ -14,6 +14,10 @@ from pathlib import Path
 
 import numpy as np
 
+# TensorRT 8.5 Python still references numpy.bool (removed in NumPy 1.24).
+if not hasattr(np, "bool"):
+    np.bool = np.bool_
+
 log = logging.getLogger(__name__)
 
 N_MELS = 80
