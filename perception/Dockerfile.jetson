@@ -109,7 +109,9 @@ RUN set -eux; \
       "${WHEEL}" "/tmp/${FILE}"; \
     pip3 install --no-cache-dir "/tmp/${FILE}"; \
     rm -f "/tmp/${FILE}"; \
-    python3 -c "import sherpa_onnx, pathlib; lib = pathlib.Path(sherpa_onnx.__file__).parent / 'lib' / 'libonnxruntime_providers_cuda.so'; assert lib.is_file(), 'CUDA provider missing from the installed wheel'; print('sherpa-onnx', sherpa_onnx.__version__, 'with CUDA provider')"
+    python3 -c "import sherpa_onnx, pathlib; lib = pathlib.Path(sherpa_onnx.__file__).parent / 'lib' / 'libonnxruntime_providers_cuda.so'; assert lib.is_file(), 'CUDA provider missing from the installed wheel'; print('sherpa-onnx', sherpa_onnx.__version__, 'with CUDA provider')"; \
+    python3 -c "import pathlib, sherpa_onnx; d=pathlib.Path(sherpa_onnx.__file__).resolve().parent/'lib'; ps=[p for p in d.glob('libonnxruntime_providers_tensorrt*') if not str(p).endswith('.disabled')]; \
+[p.rename(p.with_name(p.name+'.disabled')) for p in ps]; print('tensorrt_disabled', len(ps))"
 
 # Melo OpenEPD english.g2p needs NLTK data at runtime
 ENV NLTK_DATA=/usr/share/nltk_data
@@ -129,13 +131,27 @@ COPY perception/melo_g2p_slim/ /work/melo_g2p_slim/
 COPY perception/config.yaml /work/config.yaml
 COPY perception/deploy/ /deploy/
 COPY deploy/judgeflow_tts_run.sh /deploy/judgeflow_tts_run.sh
-RUN chmod +x /deploy/entrypoint.sh /deploy/judgeflow_tts_run.sh
+# Hook must be compiled in THIS image (JP5 glibc 2.31 / JP6 2.35).
+# A host-built .so pulled GLIBC_2.34 and broke JP5 python. Do not compile on eval boxes.
+RUN g++ -shared -fPIC -O2 -fno-exceptions -x c \
+        /deploy/ort_cuda_mem_hook.c -ldl \
+        -o /deploy/libort_cuda_mem_hook.so && \
+    chmod 755 /deploy/libort_cuda_mem_hook.so \
+              /deploy/entrypoint.sh \
+              /deploy/judgeflow_tts_run.sh && \
+    python3 -c "import ctypes; ctypes.CDLL('/deploy/libort_cuda_mem_hook.so'); print('ort_cuda_mem_hook_ok')"
 
 EXPOSE 15720
 EXPOSE 15721
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    TTS_DISABLE_TRT=1 \
+    TTS_ORT_USE_TRT=0 \
+    TTS_ORT_CUDNN_MAX_WORKSPACE=0 \
+    TTS_ORT_ARENA_EXTEND=kSameAsRequested \
+    TTS_ORT_GPU_MEM_LIMIT_MB=256 \
+    TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config
 LABEL com.nvidia.volumes.needed="nvidia_driver"
 
 # PYTHONPATH for ROS packages (python version differs JP5 vs JP6)

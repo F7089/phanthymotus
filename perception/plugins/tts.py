@@ -93,20 +93,48 @@ def _piper_run(sess, ort_module, feeds):
         return sess.run(None, feeds)
 
 
+def _sherpa_provider(hw_provider: str) -> str:
+    """sherpa-onnx EP for Matcha/VITS/Kokoro. CUDA only — never TensorRT.
+
+    JP5: Matcha is acoustic ONNX + Vocos ONNX (2 sessions). sherpa 1.13.6
+    CUDA EP V1 does not expose cudnn_conv_use_max_workspace / gpu_mem_limit.
+    Those knobs are injected by LD_PRELOAD /deploy/libort_cuda_mem_hook.so
+    (entrypoint) and also apply to the Python ORT path (Melo/Piper).
+
+    Optional: TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config
+    → provider string ``cuda:<path>`` (CPU arena / graph opts).
+    """
+    import os
+
+    hw = (hw_provider or "cpu").lower().strip()
+    if hw in ("tensorrt", "trt"):
+        log.warning("[tts] ignoring TensorRT for sherpa TTS; using CUDA EP only")
+        hw = "cuda"
+    if hw != "cuda":
+        return hw
+    cfg = os.environ.get("TTS_SHERPA_ORT_CONFIG", "/deploy/ort_cuda_jp5.config").strip()
+    if cfg and os.path.isfile(cfg):
+        return "cuda:%s" % cfg
+    return "cuda"
+
+
 def _piper_ort_providers(hw_provider: str) -> tuple:
     """Return (onnxruntime module, provider list) for Piper/Melo InferenceSession.
 
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
 
-    Memory-oriented knobs (env, Jetson FP32 Melo):
-      TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 1; set 0 to cap conv workspace ~32MB)
-      TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo  (default unset=ORT default)
-      TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (soft CUDA EP arena cap only; not whole process)
+    JP5 memory defaults: CUDA EP only, cuDNN workspace off, kSameAsRequested,
+    256MB arena cap. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
+
+    Memory-oriented knobs (env):
+      TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 0; 1 can add multiple GB)
+      TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo
+      TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (soft CUDA EP arena cap only)
       TTS_ORT_CUDNN_ALGO=HEURISTIC|DEFAULT|EXHAUSTIVE
-      TTS_ORT_USE_TRT=1                 (TensorRT EP ahead of CUDA; FP32 by default)
+      TTS_ORT_USE_TRT=1                 (TensorRT EP ahead of CUDA; off by default)
       TTS_ORT_TRT_WORKSPACE_MB=<int>    (default 512)
       TTS_ORT_TRT_CACHE=<path>          (engine cache dir)
-    Or set hw_provider=tensorrt / cuda.
+    Or set hw_provider=cuda (not tensorrt).
     """
     import os
 
@@ -120,17 +148,18 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
 
     if want_gpu:
         available = ort.get_available_providers()
-        max_ws = os.environ.get("TTS_ORT_CUDNN_MAX_WORKSPACE", "1").strip() or "1"
+        max_ws = os.environ.get("TTS_ORT_CUDNN_MAX_WORKSPACE", "0").strip() or "0"
         algo = os.environ.get("TTS_ORT_CUDNN_ALGO", "HEURISTIC").strip() or "HEURISTIC"
         cuda_opts = {
             "device_id": 0,
             "cudnn_conv_use_max_workspace": max_ws,
             "cudnn_conv_algo_search": algo,
+            "arena_extend_strategy": "kSameAsRequested",
         }
-        arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "").strip()
+        arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "kSameAsRequested").strip()
         if arena in ("kSameAsRequested", "kNextPowerOfTwo"):
             cuda_opts["arena_extend_strategy"] = arena
-        mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "").strip()
+        mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "256").strip()
         if mem_mb.isdigit() and int(mem_mb) > 0:
             cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
 
@@ -514,7 +543,7 @@ class SherpaOnnxVitsTTSAdapter(TTSAdapter):
                     length_scale=1.0 / speed if speed else 1.0,
                 ),
                 num_threads=num_threads,
-                provider=hw_provider,
+                provider=_sherpa_provider(hw_provider),
             ),
             rule_fsts=",".join(rule_fsts) if rule_fsts else "",
         )
@@ -613,7 +642,7 @@ class SherpaOnnxKokoroTTSAdapter(TTSAdapter):
                     length_scale=length_scale,
                 ),
                 num_threads=num_threads,
-                provider=hw_provider,
+                provider=_sherpa_provider(hw_provider),
             ),
             rule_fsts=",".join(rule_fsts) if rule_fsts else "",
         )
@@ -664,6 +693,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
 
         import sherpa_onnx
 
+        ep = _sherpa_provider(hw_provider)
         mem_before = _process_rss_mb()
         acoustic_model = os.path.join(model_dir, "model-steps-3.onnx")
         vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
@@ -694,7 +724,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
             model=sherpa_onnx.OfflineTtsModelConfig(
                 matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(**matcha_kw),
                 num_threads=num_threads,
-                provider=hw_provider,
+                provider=ep,
             ),
             rule_fsts=",".join(rule_fsts) if rule_fsts else "",
         )
@@ -714,7 +744,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
         log.info(
             f"[tts] sherpa-onnx Matcha loaded: model_dir={model_dir}, "
             f"sample_rate={self._model_sr}, speaker_id={speaker_id}, speed={speed}, "
-            f"provider={hw_provider}, num_threads={num_threads}, "
+            f"provider={ep}, num_threads={num_threads}, "
             f"noise_scale={noise_scale}, wetext={self._frontend.has_wetext}, "
             f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
         )
