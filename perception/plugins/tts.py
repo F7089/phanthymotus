@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import threading
 from abc import ABC, abstractmethod
@@ -1704,27 +1705,31 @@ def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
         texts = [t for t in texts if t]
     if not texts:
         texts = ["你好，欢迎使用语音合成服务，这是一段预热测试文本。"]
+    infer_ok = False
     try:
         for i, text in enumerate(texts):
             log.info(f"[tts] warmup [{i + 1}/{len(texts)}]")
             _warmup_tts_adapter(adapter, text)
+        infer_ok = True
         _maybe_malloc_trim("after_warmup")
+    except Exception as e:
+        log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
+        if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
+            print("FULLSTACK_INFER_FAILED %s" % e, flush=True)
+    try:
         if os.environ.get("TTS_MATCHA_TRT", "0") == "1" or os.environ.get(
             "TTS_DUMP_CGROUP", "0"
         ) == "1":
             from utils.matcha_trt import dump_fullstack_peak
 
-            dump_fullstack_peak("after_warmup")
+            dump_fullstack_peak("after_warmup" if infer_ok else "warmup_failed")
     except Exception as e:
-        log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
-        if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
-            print("FULLSTACK_INFER_FAILED %s" % e, flush=True)
-            try:
-                from utils.matcha_trt import dump_fullstack_peak
-
-                dump_fullstack_peak("warmup_failed")
-            except Exception:
-                pass
+        log.warning("[tts] cgroup dump failed: %s", e)
+        print(
+            "FULLSTACK_PEAK tag=%s cgroup_usage_MB=NA cgroup_max_MB=NA"
+            % ("after_warmup" if infer_ok else "warmup_failed"),
+            flush=True,
+        )
 
 
 def _start_warmup_background(adapter: TTSAdapter, plugin_cfg: dict) -> None:

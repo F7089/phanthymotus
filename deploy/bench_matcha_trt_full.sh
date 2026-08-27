@@ -84,16 +84,26 @@ if [[ -z "$VOCOS_HOST" ]]; then
   exit 1
 fi
 
+container_running() {
+  docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null | grep -q true
+}
+
 print_cgroup() {
   local cid cg
   cid=$(docker inspect -f '{{.Id}}' "$NAME" 2>/dev/null || true)
+  echo "[full] container=$NAME id=${cid:0:12}"
   [[ -n "$cid" ]] || return 0
-  cg="/sys/fs/cgroup/memory/docker/$cid"
-  if [[ -f "$cg/memory.max_usage_in_bytes" ]]; then
-    echo "----- host cgroup -----"
-    awk '{printf "host_cgroup usage_MB=%.1f\n", $1/1024/1024}' "$cg/memory.usage_in_bytes"
-    awk '{printf "host_cgroup max_MB=%.1f\n", $1/1024/1024}' "$cg/memory.max_usage_in_bytes"
-  fi
+  for cg in \
+    "/sys/fs/cgroup/memory/docker/$cid" \
+    "/sys/fs/cgroup/memory/system.slice/docker-${cid}.scope"; do
+    if [[ -f "$cg/memory.max_usage_in_bytes" ]]; then
+      echo "----- host cgroup -----"
+      awk '{printf "host_cgroup usage_MB=%.1f\n", $1/1024/1024}' "$cg/memory.usage_in_bytes"
+      awk '{printf "host_cgroup max_MB=%.1f\n", $1/1024/1024}' "$cg/memory.max_usage_in_bytes"
+      return 0
+    fi
+  done
+  echo "[full] host cgroup file not found for $cid"
 }
 
 run_one() {
@@ -138,11 +148,11 @@ run_one() {
       break
     fi
     if docker logs "$NAME" 2>&1 | grep -qE 'failed to load model|Traceback'; then
-      if ! docker ps -q --filter "name=^/${NAME}$" | grep -q .; then
+      if ! container_running; then
         break
       fi
     fi
-    if ! docker ps -q --filter "name=^/${NAME}$" | grep -q .; then
+    if ! container_running; then
       break
     fi
     sleep 2
