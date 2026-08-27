@@ -29,19 +29,46 @@ if [[ ! -d "$ROOT/perception" ]]; then
   exit 1
 fi
 
-ensure_dir_from_live() {
-  local host="$1" ctr_path="$2" marker="$3"
+flatten_copied_dir() {
+  local host="$1" marker="$2" inner="$3"
   if [[ -f "$host/$marker" ]]; then
     return 0
   fi
-  if docker inspect "$LIVE" >/dev/null 2>&1 && \
-     docker exec "$LIVE" test -f "$ctr_path/$marker"; then
+  if [[ -n "$inner" && -f "$host/$inner/$marker" ]]; then
+    mv "$host/$inner" "${host}.__inner"
+    rm -rf "$host"
+    mv "${host}.__inner" "$host"
+  fi
+}
+
+ensure_dir_from_live() {
+  local host="$1" ctr_path="$2" marker="$3"
+  local src inner
+  inner="$(basename "$ctr_path")"
+  if [[ -f "$host/$marker" ]]; then
+    return 0
+  fi
+  for src in "$ctr_path" "/models/$inner"; do
+    if [[ -f "$src/$marker" ]]; then
+      echo "[full] copy $src -> $host"
+      rm -rf "$host"
+      mkdir -p "$host"
+      cp -a "$src/." "$host/"
+      break
+    fi
+  done
+  if [[ -f "$host/$marker" ]]; then
+    return 0
+  fi
+  if docker inspect "$LIVE" >/dev/null 2>&1; then
     echo "[full] docker cp $LIVE:$ctr_path -> $host"
     rm -rf "$host"
-    docker cp "$LIVE:$ctr_path" "$host"
+    docker cp "$LIVE:$ctr_path" "$host" || true
+    flatten_copied_dir "$host" "$marker" "$inner"
   fi
   if [[ ! -f "$host/$marker" ]]; then
-    echo "FATAL: missing $host/$marker" >&2
+    echo "FATAL: missing $host/$marker (WeText/model fst). Ranking container does not need to be running:" >&2
+    echo "  docker cp ${LIVE}:${ctr_path} $host" >&2
     exit 1
   fi
 }
