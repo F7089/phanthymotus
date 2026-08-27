@@ -7,7 +7,8 @@ y_lengths -> Range) and then demands Int32:
   length_scale: network input that is shape tensor must have type Int32
 
 Leaderboard uses speed=1, so fold length_scale to 1.0 and replace Range
-limits on that path with a static INT32 max (padded decoder).
+limits on that path with a static FLOAT max (padded decoder). INT32 Range
+breaks later Less(y_arange, y_lengths) because y_lengths stays Float.
 
   python3 /deploy/matcha_onnx_for_trt.py \\
     --in /models/.../model-steps-3.onnx \\
@@ -72,9 +73,10 @@ def patch_duration_ranges(graph, max_mel):
     start_n = "trt_range_start0"
     limit_n = "trt_range_limit"
     delta_n = "trt_range_delta1"
-    _add_const(graph, start_n, np.array(0, dtype=np.int32))
-    _add_const(graph, limit_n, np.array(int(max_mel), dtype=np.int32))
-    _add_const(graph, delta_n, np.array(1, dtype=np.int32))
+    # FLOAT, not INT32: duration Less compares arange with float y_lengths.
+    _add_const(graph, start_n, np.array(0.0, dtype=np.float32))
+    _add_const(graph, limit_n, np.array(float(max_mel), dtype=np.float32))
+    _add_const(graph, delta_n, np.array(1.0, dtype=np.float32))
     n_patch = 0
     for node in graph.node:
         if node.op_type != "Range" or len(node.input) < 3:
@@ -82,7 +84,7 @@ def patch_duration_ranges(graph, max_mel):
         if not _depends_on(node.input[1], "length_scale", prod):
             continue
         print(
-            "patch Range %s limit %s -> %s=%s"
+            "patch Range %s limit %s -> %s=%s (float32)"
             % (node.name or "?", node.input[1], limit_n, max_mel),
             flush=True,
         )
