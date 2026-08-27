@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Canonical docker run for TTS leaderboard on Jetson (GPU required).
 #
-# Ranking: git clone this repo, models/WeText from the data disk (/models),
-# JP5 TensorRT engines from host cache (not git). Default is Matcha TRT
-# (cmpf32), not sherpa CUDA.
+# Ranking: git clone this repo, models/WeText from the data disk (/models).
+# JP5 (L4T R35): default Matcha TRT cmpf32. JP6 (L4T R36): sherpa dual CUDA,
+# same as before — do not load JP5 engines.
 #
 # judgeflow reference service should call this script (or equivalent flags)
 # instead of plain: docker run --privileged --network=host ...
@@ -47,7 +47,17 @@ if [[ -z "$VOCOS_CACHE_HOST" ]]; then
 fi
 mkdir -p "${MATCHA_CACHE_HOST}" "${VOCOS_CACHE_HOST}"
 
-TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-1}"
+# JP5 (L4T R35, TRT 8.5): ranking default is native Matcha TRT cmpf32.
+# JP6 (L4T R36): leave sherpa dual CUDA. Do not load JP5 engines.
+l4t_r36=0
+if [[ -f /etc/nv_tegra_release ]] && grep -q 'R36' /etc/nv_tegra_release; then
+  l4t_r36=1
+fi
+if [[ "$l4t_r36" == "1" ]]; then
+  TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-0}"
+else
+  TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-1}"
+fi
 ACOUSTIC_HOST="${TTS_MATCHA_TRT_ENGINE_HOST:-}"
 if [[ -z "$ACOUSTIC_HOST" ]]; then
   ACOUSTIC_HOST="$(ls -1t "${MATCHA_CACHE_HOST}"/model-steps-3.trt8.5*.cmpf32.engine 2>/dev/null | head -1 || true)"
