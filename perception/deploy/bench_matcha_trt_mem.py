@@ -151,10 +151,14 @@ class _Cudart:
             raise RuntimeError("cudaSetDevice(0) failed err=%s" % err)
 
     def malloc(self, n):
+        if n <= 0:
+            return 0
         p = self._c_void_p()
         err = self.lib.cudaMalloc(ctypes.byref(p), n)
-        if err or not p.value:
+        if err:
             raise RuntimeError("cudaMalloc(%s) failed err=%s" % (n, err))
+        if not p.value:
+            raise RuntimeError("cudaMalloc(%s) returned NULL" % n)
         return int(p.value)
 
     def h2d(self, dst, host):
@@ -251,15 +255,16 @@ def _numpy_dtype(trt_dtype):
 
 def _guess_shape(name, shape):
     name = (name or "").lower()
-    if not any(d < 0 for d in shape):
+    if not any(d < 1 for d in shape):
         return tuple(shape)
     if name in ("x", "tokens", "token_ids") and len(shape) == 2:
         return (1, 32)
     if "length" in name and "scale" not in name and len(shape) == 1:
         return (1,)
-    if len(shape) == 3:
-        return (1, 80, 16)
-    return tuple(1 if d < 0 else d for d in shape)
+    if name in ("mel",) or len(shape) == 3:
+        t = int(os.environ.get("TTS_TRT_MAX_MEL", "2000"))
+        return (1, 80, t)
+    return tuple(1 if d < 1 else d for d in shape)
 
 
 def _fill_input(name, shape, dtype):
@@ -290,30 +295,27 @@ def warmup(engine, ctx, keep, cuda, tag):
     for i in range(nbind):
         name = engine.get_binding_name(i)
         shape = tuple(ctx.get_binding_shape(i))
-        if any(d < 0 for d in shape):
-            raise RuntimeError(
-                "unresolved %s %s shape=%s" % (tag, name, shape)
-            )
+        if any(d < 1 for d in shape):
+            new = _guess_shape(name, shape)
+            try:
+                ctx.set_binding_shape(i, new)
+            except Exception:
+                pass
+            shape = tuple(d if d > 0 else nd for d, nd in zip(shape, new))
+            if any(d < 1 for d in shape):
+                shape = new
+            print("fix_shape", tag, name, "->", shape, flush=True)
         dtype = _numpy_dtype(engine.get_binding_dtype(i))
         nbytes = int(np.prod(shape)) * dtype.itemsize
         dptr = cuda.malloc(nbytes)
         keep.append(dptr)
         ptrs.append(dptr)
-        if engine.binding_is_input(i):
+        if engine.binding_is_input(i) and dptr:
             host = _fill_input(name, shape, dtype)
             cuda.h2d(dptr, host)
-            print(
-                "input",
-                tag,
-                name,
-                "shape",
-                shape,
-                "dtype",
-                dtype,
-                flush=True,
-            )
+            print("input", tag, name, "shape", shape, "dtype", dtype, flush=True)
         else:
-            print("output", tag, name, "shape", shape, "dtype", dtype, flush=True)
+            print("output", tag, name, "shape", shape, "dtype", dtype, "nbytes", nbytes, flush=True)
     if not ctx.execute_v2(ptrs):
         raise RuntimeError("execute_v2 failed: %s" % tag)
     print("warmup_ok", tag, flush=True)
