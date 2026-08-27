@@ -166,9 +166,13 @@ class VocosTRT:
         self._cache = Path(cache_dir)
         self._cache.mkdir(parents=True, exist_ok=True)
         trt_ver = getattr(trt, "__version__", "0")
-        self._engine_path = str(
-            self._cache / ("vocos-16khz-univ.trt%s.fp16.ws64.engine" % trt_ver)
-        )
+        env_eng = os.environ.get("TTS_VOCOS_TRT_ENGINE", "").strip()
+        if env_eng:
+            self._engine_path = env_eng
+        else:
+            self._engine_path = str(
+                self._cache / ("vocos-16khz-univ.trt%s.fp16.ws64.engine" % trt_ver)
+            )
         self._inp = _input_name(vocos_onnx)
         self._ensure_engine()
         self._cudart = _Cudart()

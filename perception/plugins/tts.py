@@ -1255,6 +1255,116 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         return pcm
 
 
+class MatchaTRTAdapter(TTSAdapter):
+    """Matcha WeText+lexicon frontend + acoustic/Vocos TensorRT. No sherpa CUDA."""
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 1.0,
+        model_name: str = "tts_matcha_kai",
+        hw_provider: str = "cuda",
+        num_threads: int = 2,
+        noise_scale: float = 0.667,
+        wetext_dir: str = "",
+    ):
+        import os
+
+        from utils.matcha_text_frontend import MatchaTextFrontend
+        from utils.matcha_trt import (
+            AcousticTRT,
+            load_lexicon,
+            load_tokens,
+            resolve_acoustic_engine,
+        )
+        from utils.model_downloader import ensure_model
+        from utils.vocos_trt import VocosTRT, _Cudart
+
+        ensure_model(model_name, model_dir)
+        ensure_model("tts_vocoder", model_dir)
+        if wetext_dir:
+            try:
+                ensure_model("tts_wetext", wetext_dir)
+            except Exception as e:
+                log.warning("[tts] WeText JuiceFS load skipped: %s", e)
+
+        mem_before = _process_rss_mb()
+        self._frontend = MatchaTextFrontend(wetext_dir or None)
+        self._sid = speaker_id
+        self._speed = speed
+        self._noise_scale = float(noise_scale)
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        self.text_normalize = False
+        tokens_path = os.path.join(model_dir, "tokens.txt")
+        lexicon_path = os.path.join(model_dir, "lexicon.txt")
+        vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
+        cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
+        matcha_cache = os.environ.get("TTS_MATCHA_TRT_CACHE", "/opt/matcha_trt_cache")
+        engine = resolve_acoustic_engine(matcha_cache)
+        self._tok2id = load_tokens(tokens_path)
+        self._lex = load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {}
+        self._cudart = _Cudart()
+        self._acoustic = AcousticTRT(engine, self._cudart)
+        self._vocos = VocosTRT(vocoder, cache)
+        self._model_sr = 16000
+        mem_after = _process_rss_mb()
+        log.info(
+            "[tts] Matcha TRT loaded: model_dir=%s engine=%s wetext=%s "
+            "speaker_id=%s speed=%s noise_scale=%s memory_mb=%.1f->%.1f",
+            model_dir,
+            engine,
+            self._frontend.has_wetext,
+            speaker_id,
+            speed,
+            noise_scale,
+            mem_before,
+            mem_after,
+        )
+
+    def split_text(self, text: str) -> list[str]:
+        text = self._frontend.normalize(text)
+        text = (text or "").strip()
+        if not text:
+            return []
+        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
+        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
+            return [text]
+        return _split_text_for_tts(text, max_chars)
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        import numpy as np
+        from utils.matcha_trt import crop_mel, pad_token_ids, text_to_ids
+
+        ids, phones, skipped, missing = text_to_ids(text, self._lex, self._tok2id)
+        ids, real_len = pad_token_ids(ids, self._tok2id)
+        if real_len < 1:
+            log.warning("[tts] TRT skip empty tokens text=%r skipped=%s", text, skipped)
+            return b""
+        if skipped or missing:
+            log.info(
+                "[tts] TRT g2p skipped=%s missing=%s phones=%s",
+                skipped[:20],
+                missing[:20],
+                " ".join(phones[:24]),
+            )
+        feeds = {
+            "x": np.asarray(ids, np.int32)[None, :],
+            "x_length": np.asarray([real_len], np.int32),
+            "noise_scale": np.asarray([self._noise_scale], np.float32),
+        }
+        ac_out = self._acoustic.infer(feeds)
+        mel = ac_out.get("mel")
+        if mel is None:
+            raise RuntimeError("no mel in %s" % list(ac_out))
+        cropped = crop_mel(mel, real_len)
+        samples = self._vocos.infer(
+            np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
+        )
+        samples = _resample_to_16k(samples, self._model_sr)
+        return _float_samples_to_pcm16(samples)
+
+
 def _build_tts_adapter(cfg: dict) -> TTSAdapter:
     model_dir = cfg.get("model_dir", "/models/sherpa-onnx/tts")
     speaker_id = int(cfg.get("speaker_id", 0))
@@ -1303,16 +1413,22 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
             num_threads=int(cfg.get("num_threads", 2)),
         )
     elif backend == "matcha":
-        adapter = SherpaOnnxTTSAdapter(
-            model_dir,
-            speaker_id,
-            speed,
+        import os
+
+        trt_kw = dict(
+            model_dir=model_dir,
+            speaker_id=speaker_id,
+            speed=speed,
             model_name=cfg.get("model_name", "tts_matcha_kai"),
             hw_provider=cfg.get("hw_provider", "cpu"),
             num_threads=int(cfg.get("num_threads", 2)),
             noise_scale=float(cfg.get("noise_scale", 0.667)),
             wetext_dir=str(cfg.get("wetext_dir", "") or ""),
         )
+        if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
+            adapter = MatchaTRTAdapter(**trt_kw)
+        else:
+            adapter = SherpaOnnxTTSAdapter(**trt_kw)
     else:
         raise ValueError(f"unknown tts backend: {backend}")
     adapter.max_segment_chars = int(cfg.get("max_segment_chars", MAX_SEGMENT_CHARS))
@@ -1593,8 +1709,22 @@ def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
             log.info(f"[tts] warmup [{i + 1}/{len(texts)}]")
             _warmup_tts_adapter(adapter, text)
         _maybe_malloc_trim("after_warmup")
+        if os.environ.get("TTS_MATCHA_TRT", "0") == "1" or os.environ.get(
+            "TTS_DUMP_CGROUP", "0"
+        ) == "1":
+            from utils.matcha_trt import dump_fullstack_peak
+
+            dump_fullstack_peak("after_warmup")
     except Exception as e:
         log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
+        if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
+            print("FULLSTACK_INFER_FAILED %s" % e, flush=True)
+            try:
+                from utils.matcha_trt import dump_fullstack_peak
+
+                dump_fullstack_peak("warmup_failed")
+            except Exception:
+                pass
 
 
 def _start_warmup_background(adapter: TTSAdapter, plugin_cfg: dict) -> None:
