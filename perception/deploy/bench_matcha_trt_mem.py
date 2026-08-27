@@ -303,29 +303,28 @@ def warmup(engine, ctx, keep, cuda, tag):
         name = engine.get_binding_name(i)
         shape = tuple(ctx.get_binding_shape(i))
         new = _guess_shape(name, shape)
-        if new != shape:
-            ok = ctx.set_binding_shape(i, new)
-            print("set_shape", tag, name, shape, "->", new, "ok", ok, flush=True)
+        ok = ctx.set_binding_shape(i, new)
+        print("set_shape", tag, name, shape, "->", new, "ok", ok, flush=True)
+    specified = None
+    if hasattr(ctx, "all_binding_shapes_specified"):
+        specified = bool(ctx.all_binding_shapes_specified)
+    print("all_binding_shapes_specified", specified, flush=True)
     ptrs = []
     for i in range(nbind):
         name = engine.get_binding_name(i)
-        shape = tuple(ctx.get_binding_shape(i))
+        is_input = engine.binding_is_input(i)
+        shape = tuple(int(d) for d in ctx.get_binding_shape(i))
         if any(d < 1 for d in shape):
-            new = _guess_shape(name, shape)
-            try:
-                ctx.set_binding_shape(i, new)
-            except Exception:
-                pass
-            shape = tuple(d if d > 0 else nd for d, nd in zip(shape, new))
-            if any(d < 1 for d in shape):
-                shape = new
-            print("fix_shape", tag, name, "->", shape, flush=True)
+            if is_input:
+                raise RuntimeError("unresolved input %s shape=%s" % (name, shape))
+            shape = _guess_shape(name, shape)
+            print("malloc_output_shape", tag, name, "->", shape, flush=True)
         dtype = _numpy_dtype(engine.get_binding_dtype(i))
         nbytes = int(np.prod(shape)) * dtype.itemsize
         dptr = cuda.malloc(nbytes)
         keep.append(dptr)
         ptrs.append(dptr)
-        if engine.binding_is_input(i) and dptr:
+        if is_input and dptr:
             host = _fill_input(name, shape, dtype)
             cuda.h2d(dptr, host)
             print("input", tag, name, "shape", shape, "dtype", dtype, flush=True)
