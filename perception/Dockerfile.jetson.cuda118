@@ -31,11 +31,10 @@ COPY deploy/cuda118_lazy/ /opt/cuda118_lazy/
 RUN chmod 755 /opt/cuda118_lazy/*.sh && \
     bash /opt/cuda118_lazy/install_cuda118.sh
 
-RUN gcc -O2 -I/usr/local/cuda-11.8/include \
+RUN gcc -O2 -D_GNU_SOURCE -I/usr/local/cuda-11.8/include \
       /opt/cuda118_lazy/probe_loading_mode.c \
-      -L/usr/local/cuda-11.8/compat -L/usr/local/cuda-11.8/lib64 \
-      -L/usr/local/cuda-11.8/lib64/stubs \
-      -Wl,-rpath,/usr/local/cuda-11.8/compat -Wl,-rpath,/usr/local/cuda-11.8/lib64 \
+      -L/usr/local/cuda-11.8/lib64/stubs -L/usr/local/cuda-11.8/lib64 \
+      -Wl,-rpath,/usr/local/cuda-11.8/lib64 \
       -lcudart -lcuda -ldl \
       -o /opt/cuda118_lazy/probe_loading_mode && \
     /usr/local/cuda-11.8/bin/nvcc --version
