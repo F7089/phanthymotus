@@ -15,6 +15,7 @@ IMAGE="${1:?image required}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$ROOT/perception/deploy/bench_matcha_trt_mem.py"
 SURGERY="$ROOT/perception/deploy/matcha_onnx_for_trt.py"
+BUILD_PY="$ROOT/perception/deploy/build_matcha_trt.py"
 NAME="${TTS_CKPT_NAME:-phanthymotus-tts-ckpt}"
 LIVE="${TTS_LIVE_CONTAINER:-phanthymotus-perception-tts-0}"
 MODEL_DIR="${TTS_MODEL_DIR:-/models/matcha-kai-16k-e500}"
@@ -44,8 +45,8 @@ ACOUSTIC_ENG="/opt/matcha_trt_cache/${ACOUSTIC_ENG_NAME}"
 
 mkdir -p "$MATCHA_CACHE_HOST" "$VOCOS_CACHE_HOST"
 
-if [[ ! -f "$PY" || ! -f "$SURGERY" ]]; then
-  echo "missing $PY or $SURGERY" >&2
+if [[ ! -f "$PY" || ! -f "$SURGERY" || ! -f "$BUILD_PY" ]]; then
+  echo "missing $PY or $SURGERY or $BUILD_PY" >&2
   exit 1
 fi
 
@@ -53,6 +54,7 @@ VOLUME_ARGS=(
   -v "$MATCHA_CACHE_HOST":/opt/matcha_trt_cache
   -v "$VOCOS_CACHE_HOST":/opt/vocos_trt_cache
   -v "$SURGERY":/deploy/matcha_onnx_for_trt.py:ro
+  -v "$BUILD_PY":/deploy/build_matcha_trt.py:ro
 )
 if [[ -f "$HOST_MODEL/$ONNX_NAME" ]]; then
   VOLUME_ARGS+=(-v "$HOST_MODEL:$MODEL_DIR:ro")
@@ -116,28 +118,35 @@ prep_onnx() {
     --max-mel "$MAX_MEL"
 }
 
+BUILD_VIA="trtexec"
+
 check_preview() {
   [[ -n "$PREVIEW" ]] || return 0
-  echo "========== trtexec --help preview =========="
+  echo "========== trtexec --help preview / tacticSources =========="
   local help
   help=$(docker run --rm --entrypoint bash "$IMAGE" -lc '
 exe=/usr/src/tensorrt/bin/trtexec
 test -x "$exe" || exe=/usr/bin/trtexec
 "$exe" --help
 ' 2>&1 || true)
-  printf '%s\n' "$help" | grep -A12 -i preview || true
-  if ! printf '%s\n' "$help" | grep -qi 'disableExternalTacticSourcesForCore0805'; then
-    echo "FATAL: this JP5 trtexec has no disableExternalTacticSourcesForCore0805" >&2
-    echo "Paste the preview section above." >&2
-    exit 1
+  printf '%s\n' "$help" | grep -A12 -i preview || echo "[trtexec] no --preview section"
+  printf '%s\n' "$help" | grep -A8 -i tacticSources || true
+  echo "========== python tensorrt.PreviewFeature =========="
+  docker run --rm --entrypoint python3 "$IMAGE" -c '
+import tensorrt as trt
+print("trt", trt.__version__)
+pf = getattr(trt, "PreviewFeature", None)
+print("PreviewFeature", None if pf is None else [x for x in dir(pf) if not x.startswith("_")])
+print("has_DISABLE_EXTERNAL", bool(pf and hasattr(pf, "DISABLE_EXTERNAL_TACTIC_SOURCES_FOR_CORE_0805")))
+print("has_FASTER_DYNAMIC", bool(pf and hasattr(pf, "FASTER_DYNAMIC_SHAPES_0805")))
+'
+  if printf '%s\n' "$help" | grep -qi 'disableExternalTacticSourcesForCore0805'; then
+    echo "[preview] trtexec has the flag; build via trtexec"
+    BUILD_VIA="trtexec"
+    return 0
   fi
-  local feat
-  feat=$(printf '%s' "$PREVIEW" | sed 's/^+//;s/^-//')
-  if ! printf '%s\n' "$help" | grep -qi "$feat"; then
-    echo "FATAL: preview feature not in trtexec --help: $feat" >&2
-    exit 1
-  fi
-  echo "[preview] ok $PREVIEW"
+  echo "[preview] trtexec has no --preview; trying Python set_preview_feature"
+  BUILD_VIA="python"
 }
 
 build_acoustic() {
@@ -147,7 +156,39 @@ build_acoustic() {
     return
   fi
   prep_onnx
-  echo "[build] acoustic trtexec fp16 workspace=${WS}MB maxL=${MAX_TOKENS} maxMel=${MAX_MEL}"
+  if [[ "$BUILD_VIA" == "python" && -n "$PREVIEW" ]]; then
+    echo "[build] python BuilderConfig.set_preview_feature (trtexec has no --preview)"
+    echo "[build] preview=$PREVIEW workspace=${WS}MB log=$BUILD_LOG"
+    set +e
+    docker rm -f "$NAME-build" >/dev/null 2>&1 || true
+    docker run --rm --name "$NAME-build" \
+      --runtime nvidia --privileged \
+      -e NVIDIA_VISIBLE_DEVICES=all \
+      -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+      "${VOLUME_ARGS[@]}" \
+      --entrypoint python3 \
+      "$IMAGE" \
+      /deploy/build_matcha_trt.py \
+        --onnx "$PATCHED_ONNX" \
+        --out "$ACOUSTIC_ENG" \
+        --preview "$PREVIEW" \
+        --workspace-mb "$WS" \
+        --min-tokens "$MIN_TOKENS" \
+        --opt-tokens "$OPT_TOKENS" \
+        --max-tokens "$MAX_TOKENS" \
+      > "$BUILD_LOG" 2>&1
+    rc=$?
+    set -e
+    echo "----- python build summary -----"
+    grep -E 'trt |preview|PreviewFeature|FATAL|wrote |parse_error|Traceback|Error|fp16|profile |build_' "$BUILD_LOG" | tail -80 || tail -80 "$BUILD_LOG"
+    if [[ $rc -ne 0 ]]; then
+      echo "FATAL: python TRT build failed rc=$rc" >&2
+      echo "Full log: $BUILD_LOG" >&2
+      exit $rc
+    fi
+    echo "[build] ok  engine=$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME via=python preview=$PREVIEW"
+    return
+  fi
   echo "[build] preview=${PREVIEW:-<none>} tacticSources=${TACTICS:-<default/all>}"
   echo "[build] onnx=$PATCHED_ONNX (same patched graph as cmpf32)"
   echo "[build] full log -> $BUILD_LOG  (quiet terminal; 10-40+ min)"
