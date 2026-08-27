@@ -132,7 +132,10 @@ test -x "$exe" || exe=/usr/bin/trtexec
   printf '%s\n' "$help" | grep -A12 -i preview || echo "[trtexec] no --preview section"
   printf '%s\n' "$help" | grep -A8 -i tacticSources || true
   echo "========== python tensorrt.PreviewFeature =========="
-  docker run --rm --entrypoint python3 "$IMAGE" -c '
+  docker run --rm --runtime nvidia --privileged \
+    -e NVIDIA_VISIBLE_DEVICES=all \
+    -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    --entrypoint python3 "$IMAGE" -c '
 import tensorrt as trt
 print("trt", trt.__version__)
 pf = getattr(trt, "PreviewFeature", None)
