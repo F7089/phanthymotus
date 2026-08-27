@@ -27,11 +27,19 @@ OPT_TOKENS="${TTS_TRT_OPT_TOKENS:-48}"
 MIN_TOKENS="${TTS_TRT_MIN_TOKENS:-8}"
 ONNX_NAME="${TTS_MATCHA_ONNX:-model-steps-3.onnx}"
 MAX_MEL="${TTS_TRT_MAX_MEL:-2000}"
-TACTICS="${TTS_TRT_TACTICS:--CUDNN,-JIT_CONVOLUTIONS}"
+PREVIEW="${TTS_TRT_PREVIEW:-}"
+TACTICS="${TTS_TRT_TACTICS:-}"
 BUILD_LOG="${TTS_TRT_BUILD_LOG:-/tmp/matcha_trt_build.log}"
 PATCHED_ONNX="/opt/matcha_trt_cache/model-steps-3.trtprep.L${MAX_TOKENS}.mel${MAX_MEL}.cmpf32.onnx"
-TAC_TAG=$(printf '%s' "$TACTICS" | sed 's/^-//;s/,/-/g;s/+//g' | tr '[:upper:]' '[:lower:]')
-ACOUSTIC_ENG_NAME="model-steps-3.trt8.5.fp16.ws${WS}.L${MAX_TOKENS}.mel${MAX_MEL}.${TAC_TAG}.engine"
+if [[ -n "$PREVIEW" ]]; then
+  ENG_TAG=$(printf '%s' "$PREVIEW" | sed 's/^+//;s/^-//;s/,/-/g;s/+/-/g' | tr '[:upper:]' '[:lower:]')
+  BUILD_LOG="${TTS_TRT_BUILD_LOG:-/tmp/matcha_trt_build_${ENG_TAG}.log}"
+elif [[ -n "$TACTICS" ]]; then
+  ENG_TAG=$(printf '%s' "$TACTICS" | sed 's/^-//;s/,/-/g;s/+//g' | tr '[:upper:]' '[:lower:]')
+else
+  ENG_TAG="cmpf32"
+fi
+ACOUSTIC_ENG_NAME="model-steps-3.trt8.5.fp16.ws${WS}.L${MAX_TOKENS}.mel${MAX_MEL}.${ENG_TAG}.engine"
 ACOUSTIC_ENG="/opt/matcha_trt_cache/${ACOUSTIC_ENG_NAME}"
 
 mkdir -p "$MATCHA_CACHE_HOST" "$VOCOS_CACHE_HOST"
@@ -108,6 +116,30 @@ prep_onnx() {
     --max-mel "$MAX_MEL"
 }
 
+check_preview() {
+  [[ -n "$PREVIEW" ]] || return 0
+  echo "========== trtexec --help preview =========="
+  local help
+  help=$(docker run --rm --entrypoint bash "$IMAGE" -lc '
+exe=/usr/src/tensorrt/bin/trtexec
+test -x "$exe" || exe=/usr/bin/trtexec
+"$exe" --help
+' 2>&1 || true)
+  printf '%s\n' "$help" | grep -A12 -i preview || true
+  if ! printf '%s\n' "$help" | grep -qi 'disableExternalTacticSourcesForCore0805'; then
+    echo "FATAL: this JP5 trtexec has no disableExternalTacticSourcesForCore0805" >&2
+    echo "Paste the preview section above." >&2
+    exit 1
+  fi
+  local feat
+  feat=$(printf '%s' "$PREVIEW" | sed 's/^+//;s/^-//')
+  if ! printf '%s\n' "$help" | grep -qi "$feat"; then
+    echo "FATAL: preview feature not in trtexec --help: $feat" >&2
+    exit 1
+  fi
+  echo "[preview] ok $PREVIEW"
+}
+
 build_acoustic() {
   if [[ -f "$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME" ]]; then
     echo "[build] reuse $MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME"
@@ -116,13 +148,51 @@ build_acoustic() {
   fi
   prep_onnx
   echo "[build] acoustic trtexec fp16 workspace=${WS}MB maxL=${MAX_TOKENS} maxMel=${MAX_MEL}"
-  echo "[build] tacticSources=${TACTICS}"
-  echo "[build] onnx=$PATCHED_ONNX (not the raw sherpa graph)"
+  echo "[build] preview=${PREVIEW:-<none>} tacticSources=${TACTICS:-<default/all>}"
+  echo "[build] onnx=$PATCHED_ONNX (same patched graph as cmpf32)"
   echo "[build] full log -> $BUILD_LOG  (quiet terminal; 10-40+ min)"
   docker rm -f "$NAME-build" >/dev/null 2>&1 || true
-  run_trtexec() {
-    local tactics="$1"
-    docker rm -f "$NAME-build" >/dev/null 2>&1 || true
+  local extra=""
+  if [[ -n "$PREVIEW" ]]; then
+    extra+=" --preview=${PREVIEW}"
+  elif [[ -n "$TACTICS" ]]; then
+    extra+=" --tacticSources=${TACTICS}"
+  fi
+  if [[ "${TTS_TRT_VERBOSE:-0}" == "1" ]]; then
+    extra+=" --verbose --profilingVerbosity=detailed"
+  fi
+  if [[ "${TTS_TRT_DUMP_LAYER:-0}" == "1" ]]; then
+    extra+=" --dumpLayerInfo"
+  fi
+  set +e
+  docker rm -f "$NAME-build" >/dev/null 2>&1 || true
+  docker run --rm --name "$NAME-build" \
+    --runtime nvidia --privileged \
+    -e NVIDIA_VISIBLE_DEVICES=all \
+    -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    "${VOLUME_ARGS[@]}" \
+    --entrypoint bash \
+    "$IMAGE" \
+    -lc '
+set -e
+exe=/usr/src/tensorrt/bin/trtexec
+test -x "$exe" || exe=/usr/bin/trtexec
+ls -lah '"$PATCHED_ONNX"'
+"$exe" --onnx='"$PATCHED_ONNX"' \
+  --saveEngine='"$ACOUSTIC_ENG"'.tmp \
+  --fp16 \
+  --workspace='"$WS"' \
+  '"$extra"' \
+  --minShapes=x:1x'"$MIN_TOKENS"',x_length:1 \
+  --optShapes=x:1x'"$OPT_TOKENS"',x_length:1 \
+  --maxShapes=x:1x'"$MAX_TOKENS"',x_length:1
+mv -f '"$ACOUSTIC_ENG"'.tmp '"$ACOUSTIC_ENG"'
+ls -lah '"$ACOUSTIC_ENG"'
+' > "$BUILD_LOG" 2>&1
+  rc=$?
+  if [[ $rc -ne 0 ]] && [[ -n "$TACTICS" ]] && [[ -z "$PREVIEW" ]] && [[ "$TACTICS" == *JIT* ]]; then
+    echo "[build] tactics $TACTICS failed; retry --tacticSources=-CUDNN"
+    extra=" --tacticSources=-CUDNN"
     docker run --rm --name "$NAME-build" \
       --runtime nvidia --privileged \
       -e NVIDIA_VISIBLE_DEVICES=all \
@@ -134,37 +204,28 @@ build_acoustic() {
 set -e
 exe=/usr/src/tensorrt/bin/trtexec
 test -x "$exe" || exe=/usr/bin/trtexec
-ls -lah '"$PATCHED_ONNX"'
 "$exe" --onnx='"$PATCHED_ONNX"' \
   --saveEngine='"$ACOUSTIC_ENG"'.tmp \
   --fp16 \
   --workspace='"$WS"' \
-  --tacticSources='"$tactics"' \
+  '"$extra"' \
   --minShapes=x:1x'"$MIN_TOKENS"',x_length:1 \
   --optShapes=x:1x'"$OPT_TOKENS"',x_length:1 \
   --maxShapes=x:1x'"$MAX_TOKENS"',x_length:1
 mv -f '"$ACOUSTIC_ENG"'.tmp '"$ACOUSTIC_ENG"'
 ls -lah '"$ACOUSTIC_ENG"'
 ' > "$BUILD_LOG" 2>&1
-  }
-  set +e
-  run_trtexec "$TACTICS"
-  rc=$?
-  if [[ $rc -ne 0 ]] && [[ "$TACTICS" == *JIT* ]]; then
-    echo "[build] tactics $TACTICS failed; retry --tacticSources=-CUDNN (TRT 8.5 may lack JIT_CONVOLUTIONS)"
-    TACTICS=-CUDNN
-    run_trtexec "$TACTICS"
     rc=$?
   fi
   set -e
   echo "----- trtexec summary -----"
-  grep -E '\[E\]|&&&& |Invalid Node|Parsing model failed|Engine set up|PASSED|FAILED|tacticSources' "$BUILD_LOG" | grep -v 'onnx2trt_utils.cpp:403' || true
+  grep -E '\[E\]|&&&& |Invalid Node|Parsing model failed|Engine set up|PASSED|FAILED|tacticSources|preview' "$BUILD_LOG" | grep -v 'onnx2trt_utils.cpp:403' || true
   if [[ $rc -ne 0 ]]; then
     echo "FATAL: trtexec failed rc=$rc" >&2
     echo "Paste the summary above. Full log: $BUILD_LOG" >&2
     exit $rc
   fi
-  echo "[build] ok  engine=$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME tactics=$TACTICS"
+  echo "[build] ok  engine=$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME preview=${PREVIEW:-none} tactics=${TACTICS:-default}"
 }
 
 find_vocos_eng() {
@@ -216,6 +277,7 @@ run_measure() {
 }
 
 inspect_onnx
+check_preview
 build_acoustic
 
 VOCOS_ENG=$(find_vocos_eng)
@@ -227,6 +289,9 @@ else
 fi
 
 echo
-echo "Done. Ranking number is host_cgroup max_MB."
-echo "Engine cache: $MATCHA_CACHE_HOST  (do not git add)"
+echo "Done. Deserialize/warmup peak is host_cgroup max_MB."
+echo "Engine: $MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME"
 echo "Build log: $BUILD_LOG"
+echo "If measure logs show warmup_ok, fullstack (ROS+WeText) is:"
+echo "  TTS_MATCHA_TRT_ENGINE=$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME \\"
+echo "    bash deploy/bench_matcha_trt_full.sh \"$IMAGE\""
