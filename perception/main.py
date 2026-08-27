@@ -460,10 +460,17 @@ def main():
 
     threading.Thread(target=_spin, daemon=True, name="perception_spin").start()
 
-    # Start WebSocket ASR server in a separate thread
-    threading.Thread(target=_start_ws_thread, args=(ws_port,), daemon=True, name="ws_asr").start()
+    asr_on = bool(cfg.get("plugins", {}).get("asr", {}).get("enabled", False))
+    ranking_mode = os.environ.get("TTS_RANKING_MODE", "0") == "1"
+    if asr_on:
+        threading.Thread(target=_start_ws_thread, args=(ws_port,), daemon=True, name="ws_asr").start()
+    else:
+        log.info("skip WebSocket ASR server (plugins.asr.enabled=false)")
 
-    _start_registration(mcp_port, "Perception Stack", "perception")
+    if ranking_mode:
+        log.info("TTS_RANKING_MODE=1: skip agent-core registration")
+    else:
+        _start_registration(mcp_port, "Perception Stack", "perception")
 
     server = ThreadingHTTPServer(("", mcp_port), make_handler())
     log.info(f"MCP server → http://0.0.0.0:{mcp_port}")

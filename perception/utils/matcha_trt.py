@@ -122,15 +122,15 @@ class AcousticTRT:
     def __init__(self, engine_path: str, cudart):
         import tensorrt as trt
 
+        from utils.vocos_trt import CudaBufferPool, deserialize_cuda_engine
+
         _load_trt_plugins()
         self._cudart = cudart
+        self._bufs = CudaBufferPool(cudart)
+        self._reuse = os.environ.get("TTS_TRT_BUF_REUSE", "1") != "0"
         logger = trt.Logger(trt.Logger.WARNING)
         runtime = trt.Runtime(logger)
-        with open(engine_path, "rb") as f:
-            blob = f.read()
-        engine = runtime.deserialize_cuda_engine(blob)
-        if engine is None:
-            raise RuntimeError("deserialize failed: %s" % engine_path)
+        engine, nbytes = deserialize_cuda_engine(runtime, engine_path)
         ctx = engine.create_execution_context()
         if ctx is None:
             raise RuntimeError("create_execution_context failed: %s" % engine_path)
@@ -139,11 +139,22 @@ class AcousticTRT:
         self._ctx = ctx
         self.engine_path = engine_path
         log.info(
-            "[tts] matcha TRT engine=%s bytes=%s trt=%s",
+            "[tts] matcha TRT engine=%s bytes=%s trt=%s reuse=%s",
             engine_path,
-            len(blob),
+            nbytes,
             trt.__version__,
+            self._reuse,
         )
+
+    def close(self) -> None:
+        if getattr(self, "_bufs", None) is not None:
+            self._bufs.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def infer(self, feeds: dict) -> dict:
         engine, ctx, cuda = self._engine, self._ctx, self._cudart
@@ -157,24 +168,30 @@ class AcousticTRT:
             arr = np.ascontiguousarray(feeds[name])
             feeds[name] = arr
             ctx.set_binding_shape(i, tuple(arr.shape))
-        ptrs = []
-        host_out = []
-        alloc = []
+        nbytes_list = []
+        meta = []
+        for i in range(nbind):
+            name = engine.get_binding_name(i)
+            shape = tuple(int(d) for d in ctx.get_binding_shape(i))
+            if any(d < 1 for d in shape):
+                if (not engine.binding_is_input(i)) and len(shape) == 3:
+                    shape = (1, 80, MAX_MEL)
+                else:
+                    shape = tuple(max(d, 1) for d in shape)
+            dtype = _numpy_dtype(engine.get_binding_dtype(i))
+            nbytes = int(np.prod(shape)) * dtype.itemsize
+            nbytes_list.append(nbytes)
+            meta.append((name, shape, dtype, bool(engine.binding_is_input(i))))
+        if self._reuse:
+            ptrs = self._bufs.ensure(nbytes_list)
+            alloc = []
+        else:
+            ptrs = [cuda.malloc(n) for n in nbytes_list]
+            alloc = list(ptrs)
         try:
-            for i in range(nbind):
-                name = engine.get_binding_name(i)
-                shape = tuple(int(d) for d in ctx.get_binding_shape(i))
-                if any(d < 1 for d in shape):
-                    if (not engine.binding_is_input(i)) and len(shape) == 3:
-                        shape = (1, 80, MAX_MEL)
-                    else:
-                        shape = tuple(max(d, 1) for d in shape)
-                dtype = _numpy_dtype(engine.get_binding_dtype(i))
-                nbytes = int(np.prod(shape)) * dtype.itemsize
-                dptr = cuda.malloc(nbytes)
-                alloc.append(dptr)
-                ptrs.append(dptr)
-                if engine.binding_is_input(i):
+            host_out = []
+            for (name, shape, dtype, is_in), dptr in zip(meta, ptrs):
+                if is_in:
                     cuda.h2d(dptr, np.ascontiguousarray(feeds[name], dtype=dtype))
                 else:
                     host_out.append((name, np.empty(shape, dtype=dtype), dptr))

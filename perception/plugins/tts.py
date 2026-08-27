@@ -1291,7 +1291,6 @@ class MatchaTRTAdapter(TTSAdapter):
                 log.warning("[tts] WeText JuiceFS load skipped: %s", e)
 
         mem_before = _process_rss_mb()
-        self._frontend = MatchaTextFrontend(wetext_dir or None)
         self._sid = speaker_id
         self._speed = speed
         self._noise_scale = float(noise_scale)
@@ -1303,11 +1302,25 @@ class MatchaTRTAdapter(TTSAdapter):
         cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
         matcha_cache = os.environ.get("TTS_MATCHA_TRT_CACHE", "/opt/matcha_trt_cache")
         engine = resolve_acoustic_engine(matcha_cache)
-        self._tok2id = load_tokens(tokens_path)
-        self._lex = load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {}
+        # Ranking looks at memory.max_usage. Deserialize TRT first so WeText
+        # does not sit on top of the engine-bytes + deserialize spike.
+        load_order = os.environ.get("TTS_TRT_LOAD_ORDER", "trt_first").strip()
         self._cudart = _Cudart()
-        self._acoustic = AcousticTRT(engine, self._cudart)
-        self._vocos = VocosTRT(vocoder, cache)
+        if load_order == "frontend_first":
+            self._frontend = MatchaTextFrontend(wetext_dir or None)
+            self._tok2id = load_tokens(tokens_path)
+            self._lex = load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {}
+            self._acoustic = AcousticTRT(engine, self._cudart)
+            self._vocos = VocosTRT(vocoder, cache, cudart=self._cudart)
+        else:
+            self._acoustic = AcousticTRT(engine, self._cudart)
+            self._vocos = VocosTRT(vocoder, cache, cudart=self._cudart)
+            import gc
+
+            gc.collect()
+            self._frontend = MatchaTextFrontend(wetext_dir or None)
+            self._tok2id = load_tokens(tokens_path)
+            self._lex = load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {}
         self._model_sr = 16000
         mem_after = _process_rss_mb()
         log.info(

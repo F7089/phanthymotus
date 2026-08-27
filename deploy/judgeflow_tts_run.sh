@@ -96,6 +96,7 @@ RUN_ARGS=(
     -e TTS_MATCHA_TRT="${TTS_MATCHA_TRT}"
     -e TTS_MATCHA_TRT_CACHE=/opt/matcha_trt_cache
     -e TTS_TRT_PREFER_TACTICS=0
+    -e TTS_RANKING_MODE="${TTS_RANKING_MODE:-1}"
     -e TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     -e TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     -e TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"
@@ -119,6 +120,7 @@ if [[ -f "$ROOT/perception/plugins/tts.py" ]]; then
     -v "$ROOT/perception/plugins/tts.py:/work/plugins/tts.py:ro"
     -v "$ROOT/perception/utils/matcha_trt.py:/work/utils/matcha_trt.py:ro"
     -v "$ROOT/perception/utils/vocos_trt.py:/work/utils/vocos_trt.py:ro"
+    -v "$ROOT/perception/main.py:/work/main.py:ro"
   )
 fi
 if [[ -f "$ROOT/perception/deploy/entrypoint.sh" ]]; then
