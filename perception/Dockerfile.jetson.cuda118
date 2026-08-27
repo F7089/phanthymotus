@@ -1,12 +1,9 @@
 # JP5.1.1 host unchanged. Userspace CUDA 11.8 + optional ORT rebuild for lazy loading.
 #
 #   docker build -f perception/Dockerfile.jetson.cuda118 --network=host \
-#     --build-arg JP_VERSION=511 --build-arg BUILD_ORT=0 \
-#     -t phanthymotus-cuda118-lazy:probe .
-#
-#   docker build -f perception/Dockerfile.jetson.cuda118 --network=host \
 #     --build-arg JP_VERSION=511 --build-arg BUILD_ORT=1 \
 #     -t phanthymotus-cuda118-lazy:ort .
+# Then: bash deploy/cuda118_lazy/run.sh all   (tiny then full; skip probe image)
 ARG JP_VERSION=511
 FROM bj-warehouse.tencentcloudcr.com/phanthy-motus/jetson-base:jp${JP_VERSION}-torch
 ARG PYPI_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple/

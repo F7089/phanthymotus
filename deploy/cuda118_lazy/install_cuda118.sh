@@ -6,13 +6,26 @@ export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/local/cuda-11.8/compat
 
 if [[ ! -x /usr/local/cuda-11.8/bin/nvcc ]]; then
+  # Jetson upgrade package first (tegra), then generic ubuntu2004/arm64.
+  tegra_deb=https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-tegra-repo-ubuntu2004-11-8-local_11.8.0-1_arm64.deb
+  if wget -q -O /tmp/cuda-tegra-11-8.deb "$tegra_deb"; then
+    dpkg -i /tmp/cuda-tegra-11-8.deb || true
+    cp -a /var/cuda-tegra-repo-ubuntu2004-11-8-local/*.gpg /usr/share/keyrings/ 2>/dev/null || true
+    apt-get -o Acquire::AllowInsecureRepositories=true update
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
+      cuda-tegra-repo-ubuntu2004-11-8-local || true
+    apt-get install -y --no-install-recommends --allow-unauthenticated \
+      cuda-toolkit-11-8 cuda-compat-11-8 || true
+  fi
+fi
+
+if [[ ! -x /usr/local/cuda-11.8/bin/nvcc ]]; then
   wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64/cuda-keyring_1.1-1_all.deb \
     -O /tmp/cuda-keyring.deb || \
   wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/arm64/cuda-keyring_1.0-1_all.deb \
     -O /tmp/cuda-keyring.deb
   dpkg -i /tmp/cuda-keyring.deb
   apt-get -o Acquire::AllowInsecureRepositories=true update
-  # Pin 11.8. Do not apt-get install cuda (that pulls latest 12.x).
   apt-get install -y --no-install-recommends --allow-unauthenticated \
     cuda-toolkit-11-8 || apt-get install -y --no-install-recommends --allow-unauthenticated \
     cuda-nvcc-11-8 cuda-cudart-dev-11-8 cuda-nvrtc-11-8 cuda-cupti-11-8
