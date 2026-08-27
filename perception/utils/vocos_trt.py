@@ -46,6 +46,9 @@ def istft_numpy(mag: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         raise RuntimeError("vocos istft expected %s bins, got %s" % (N_FFT // 2 + 1, n_bins))
     win = _hann_periodic(WIN)
     frames = np.fft.irfft(spec, n=N_FFT, axis=0).real[:WIN, :]
+    # scipy.signal.istft scaling='spectrum': invert the 1/win.sum() STFT gain.
+    # Periodic hann 1024 → win.sum() == 512.
+    frames *= win.sum()
     out_len = WIN + (nseg - 1) * HOP
     acc = np.zeros(out_len, dtype=np.float64)
     w2 = np.zeros(out_len, dtype=np.float64)

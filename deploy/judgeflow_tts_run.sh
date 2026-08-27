@@ -96,7 +96,9 @@ RUN_ARGS=(
     -e TTS_MATCHA_TRT="${TTS_MATCHA_TRT}"
     -e TTS_MATCHA_TRT_CACHE=/opt/matcha_trt_cache
     -e TTS_TRT_PREFER_TACTICS=0
-    -e TTS_RANKING_MODE="${TTS_RANKING_MODE:-1}"
+    # Keep agent-core registration unless the eval harness opts in.
+    # TTS_RANKING_MODE=1 skips /api/mcp heartbeat; do not default this on.
+    -e TTS_RANKING_MODE="${TTS_RANKING_MODE:-0}"
     -e TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     -e TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     -e TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"

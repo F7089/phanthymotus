@@ -48,7 +48,7 @@ run_case ranking_mode \
 
 run_case combo \
   env TTS_VOCOS_PARSE_ONNX=0 TTS_ISTFT=numpy TTS_TRT_LOAD_ORDER=trt_first \
-      TTS_TRT_BUF_REUSE=1 TTS_RANKING_MODE=1
+      TTS_TRT_BUF_REUSE=1 TTS_RANKING_MODE=0
 
 echo
 echo "======== A/B summary (grep max_MB) ========"
