@@ -12,13 +12,16 @@ export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
 log "starting (LD_PRELOAD=${LD_PRELOAD})"
 log "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-<unset>} FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS:-<unset>}"
 
-# Matcha uses sherpa-onnx's bundled CUDA ORT for acoustic only.
-# Vocos uses TensorRT Runtime (not ORT TensorRT EP). Keep sherpa's TRT EP
+# Matcha ranking default is native TensorRT (TTS_MATCHA_TRT=1 from
+# judgeflow_tts_run.sh) with host-cached cmpf32 + Vocos engines.
+# sherpa dual CUDA ORT is TTS_MATCHA_TRT=0. Keep sherpa's ORT TensorRT EP
 # disabled so ORT does not load a second nvinfer path.
 export TTS_VOCOS_TRT="${TTS_VOCOS_TRT:-0}"
 export TTS_VOCOS_TRT_CACHE="${TTS_VOCOS_TRT_CACHE:-/opt/vocos_trt_cache}"
-mkdir -p "${TTS_VOCOS_TRT_CACHE}"
-log "vocos TensorRT runtime enabled=${TTS_VOCOS_TRT} (default off; JP5 dual-CUDA is lower mem)"
+export TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-0}"
+export TTS_MATCHA_TRT_CACHE="${TTS_MATCHA_TRT_CACHE:-/opt/matcha_trt_cache}"
+mkdir -p "${TTS_VOCOS_TRT_CACHE}" "${TTS_MATCHA_TRT_CACHE}"
+log "matcha TensorRT runtime enabled=${TTS_MATCHA_TRT} vocos_ort_hybrid=${TTS_VOCOS_TRT}"
 
 if [ "${TTS_DISABLE_TRT:-1}" = "1" ]; then
     log "disabling sherpa ORT TensorRT EP (native vocos uses TensorRT Runtime)..."

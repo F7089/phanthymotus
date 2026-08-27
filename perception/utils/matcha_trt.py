@@ -197,21 +197,14 @@ def resolve_acoustic_engine(cache_dir: str) -> str:
             raise FileNotFoundError("TTS_MATCHA_TRT_ENGINE missing: %s" % explicit)
         return explicit
     cache = Path(cache_dir)
-    tactics = sorted(
-        cache.glob("model-steps-3.trt8.5*.cudnn--jit_convolutions.engine")
-    )
-    prefer = os.environ.get("TTS_TRT_PREFER_TACTICS", "1") == "1"
-    if prefer and tactics:
-        return str(tactics[-1])
     cmpf = sorted(cache.glob("model-steps-3.trt8.5*.cmpf32.engine"))
     if cmpf:
         return str(cmpf[-1])
-    if tactics:
-        return str(tactics[-1])
-    any_eng = sorted(cache.glob("model-steps-3.trt8.5*.engine"))
-    if any_eng:
-        return str(any_eng[-1])
-    raise FileNotFoundError("no Matcha TRT engine under %s" % cache_dir)
+    raise FileNotFoundError(
+        "no cmpf32 Matcha TRT engine under %s "
+        "(ranking uses default-tactic cmpf32; not tacticSources/preview plans)"
+        % cache_dir
+    )
 
 
 def load_tokens(path: str) -> dict:

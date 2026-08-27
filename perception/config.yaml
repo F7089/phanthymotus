@@ -24,7 +24,8 @@ plugins:
     model_name: tts_matcha_kai
     model_dir: /models/matcha-kai-16k-e500
     hw_provider: cuda
-    # Acoustic + Vocos: sherpa ORT CUDA. TTS_VOCOS_TRT=1 is opt-in (higher JP5 mem).
+    # Ranking default: TTS_MATCHA_TRT=1 in judgeflow_tts_run.sh (native TRT,
+    # cmpf32 engine on host cache). sherpa dual CUDA if TTS_MATCHA_TRT=0.
     num_threads: 2
     speaker_id: 0
     speed: 1.0
