@@ -81,7 +81,7 @@ for _ in $(seq 1 90); do
 done
 
 echo "----- logs -----"
-docker logs "$NAME" 2>&1 | grep -E 'CKPT |CKPT_DONE|imported |deserialize|wrote_wav|n_tokens|mel_raw|vocos_s|text |phones |Traceback|Error|plugin_lib' || docker logs --tail 80 "$NAME"
+docker logs "$NAME" 2>&1 | grep -E 'CKPT |CKPT_DONE|imported |deserialize|wrote_wav|n_tokens|mel_raw|vocos_s|text |phones |pad tokens|Traceback|Error|plugin_lib' || docker logs --tail 80 "$NAME"
 
 CID=$(docker inspect -f '{{.Id}}' "$NAME")
 CG="/sys/fs/cgroup/memory/docker/$CID"
