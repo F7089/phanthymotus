@@ -169,9 +169,42 @@ class _Cudart:
             raise RuntimeError("cudaMemcpy H2D failed err=%s" % err)
 
 
+_PLUGINS_LOADED = False
+
+
+def _load_trt_plugins():
+    """trtexec links InstanceNorm etc. via nvinfer_plugin; Python Runtime does not."""
+    global _PLUGINS_LOADED
+    if _PLUGINS_LOADED:
+        return
+    import ctypes
+    import tensorrt as trt
+
+    loaded = None
+    for name in (
+        "libnvinfer_plugin.so.8",
+        "libnvinfer_plugin.so",
+        "/usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.8",
+        "/usr/lib/aarch64-linux-gnu/tegra/libnvinfer_plugin.so.8",
+    ):
+        try:
+            ctypes.CDLL(name, mode=ctypes.RTLD_GLOBAL)
+            loaded = name
+            break
+        except OSError:
+            continue
+    print("plugin_lib", loaded or "NONE", flush=True)
+    if hasattr(trt, "init_libnvinfer_plugins"):
+        logger = trt.Logger(trt.Logger.WARNING)
+        trt.init_libnvinfer_plugins(logger, "")
+        print("init_libnvinfer_plugins ok", flush=True)
+    _PLUGINS_LOADED = True
+
+
 def deserialize(engine_path, keep):
     import tensorrt as trt
 
+    _load_trt_plugins()
     logger = trt.Logger(trt.Logger.WARNING)
     runtime = trt.Runtime(logger)
     with open(engine_path, "rb") as f:
