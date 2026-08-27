@@ -14,6 +14,7 @@ set -euo pipefail
 IMAGE="${1:?image required}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$ROOT/perception/deploy/bench_matcha_trt_mem.py"
+SURGERY="$ROOT/perception/deploy/matcha_onnx_for_trt.py"
 NAME="${TTS_CKPT_NAME:-phanthymotus-tts-ckpt}"
 LIVE="${TTS_LIVE_CONTAINER:-phanthymotus-perception-tts-0}"
 MODEL_DIR="${TTS_MODEL_DIR:-/models/matcha-kai-16k-e500}"
@@ -25,20 +26,23 @@ MAX_TOKENS="${TTS_TRT_MAX_TOKENS:-256}"
 OPT_TOKENS="${TTS_TRT_OPT_TOKENS:-48}"
 MIN_TOKENS="${TTS_TRT_MIN_TOKENS:-8}"
 ONNX_NAME="${TTS_MATCHA_ONNX:-model-steps-3.onnx}"
+MAX_MEL="${TTS_TRT_MAX_MEL:-2000}"
 BUILD_LOG="${TTS_TRT_BUILD_LOG:-/tmp/matcha_trt_build.log}"
-ACOUSTIC_ENG_NAME="model-steps-3.trt8.5.fp16.ws${WS}.L${MAX_TOKENS}.engine"
+PATCHED_ONNX="/opt/matcha_trt_cache/model-steps-3.trtprep.L${MAX_TOKENS}.mel${MAX_MEL}.onnx"
+ACOUSTIC_ENG_NAME="model-steps-3.trt8.5.fp16.ws${WS}.L${MAX_TOKENS}.mel${MAX_MEL}.engine"
 ACOUSTIC_ENG="/opt/matcha_trt_cache/${ACOUSTIC_ENG_NAME}"
 
 mkdir -p "$MATCHA_CACHE_HOST" "$VOCOS_CACHE_HOST"
 
-if [[ ! -f "$PY" ]]; then
-  echo "missing $PY" >&2
+if [[ ! -f "$PY" || ! -f "$SURGERY" ]]; then
+  echo "missing $PY or $SURGERY" >&2
   exit 1
 fi
 
 VOLUME_ARGS=(
   -v "$MATCHA_CACHE_HOST":/opt/matcha_trt_cache
   -v "$VOCOS_CACHE_HOST":/opt/vocos_trt_cache
+  -v "$SURGERY":/deploy/matcha_onnx_for_trt.py:ro
 )
 if [[ -f "$HOST_MODEL/$ONNX_NAME" ]]; then
   VOLUME_ARGS+=(-v "$HOST_MODEL:$MODEL_DIR:ro")
@@ -84,13 +88,33 @@ print("ops", ", ".join("%s=%s" % kv for kv in ops.most_common(25)))
 '
 }
 
+prep_onnx() {
+  local host_patched="$MATCHA_CACHE_HOST/$(basename "$PATCHED_ONNX")"
+  if [[ -f "$host_patched" ]]; then
+    echo "[prep] reuse $host_patched"
+    return
+  fi
+  echo "[prep] fold length_scale=1.0 and static Range max_mel=$MAX_MEL"
+  docker run --rm \
+    "${VOLUME_ARGS[@]}" \
+    --entrypoint python3 \
+    "$IMAGE" \
+    /deploy/matcha_onnx_for_trt.py \
+    --in "$MODEL_DIR/$ONNX_NAME" \
+    --out "$PATCHED_ONNX" \
+    --length-scale 1.0 \
+    --max-mel "$MAX_MEL"
+}
+
 build_acoustic() {
   if [[ -f "$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME" ]]; then
     echo "[build] reuse $MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME"
     ls -lah "$MATCHA_CACHE_HOST/$ACOUSTIC_ENG_NAME"
     return
   fi
-  echo "[build] acoustic trtexec fp16 workspace=${WS}MB maxL=${MAX_TOKENS}"
+  prep_onnx
+  echo "[build] acoustic trtexec fp16 workspace=${WS}MB maxL=${MAX_TOKENS} maxMel=${MAX_MEL}"
+  echo "[build] onnx=$PATCHED_ONNX (not the raw sherpa graph)"
   echo "[build] log -> $BUILD_LOG"
   echo "[build] this is NOT docker build; uses the live TTS image GPU. 10-40+ min."
   docker rm -f "$NAME-build" >/dev/null 2>&1 || true
@@ -106,8 +130,8 @@ build_acoustic() {
 set -e
 exe=/usr/src/tensorrt/bin/trtexec
 test -x "$exe" || exe=/usr/bin/trtexec
-ls -lah '"$MODEL_DIR"'/'"$ONNX_NAME"'
-"$exe" --onnx='"$MODEL_DIR"'/'"$ONNX_NAME"' \
+ls -lah '"$PATCHED_ONNX"'
+"$exe" --onnx='"$PATCHED_ONNX"' \
   --saveEngine='"$ACOUSTIC_ENG"'.tmp \
   --fp16 \
   --workspace='"$WS"' \
