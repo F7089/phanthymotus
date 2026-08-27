@@ -18,7 +18,7 @@ VOCOS_CACHE_HOST="${TTS_VOCOS_TRT_CACHE_HOST:-/tmp/vocos_trt_cache}"
 TEXT="${TTS_TRT_TEXT:-你好，我是陆风。}"
 OUT_HOST="${TTS_TRT_WAV:-/tmp/matcha_trt_lufeng.wav}"
 
-ACOUSTIC_HOST=$(ls -1 "$MATCHA_CACHE_HOST"/model-steps-3.trt8.5*.engine 2>/dev/null | head -1 || true)
+ACOUSTIC_HOST=$(ls -1t "$MATCHA_CACHE_HOST"/model-steps-3.trt8.5*.engine 2>/dev/null | head -1 || true)
 VOCOS_HOST=$(ls -1 "$VOCOS_CACHE_HOST"/vocos-16khz-univ*.engine 2>/dev/null | head -1 || true)
 if [[ -z "$ACOUSTIC_HOST" || -z "$VOCOS_HOST" ]]; then
   echo "FATAL: need Matcha+Vocos engines. Run bench_matcha_trt_mem.sh first." >&2
