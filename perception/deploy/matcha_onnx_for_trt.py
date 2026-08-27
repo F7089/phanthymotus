@@ -20,7 +20,7 @@ import argparse
 
 import numpy as np
 import onnx
-from onnx import numpy_helper
+from onnx import TensorProto, helper, numpy_helper
 
 
 def _producer_map(graph):
@@ -98,6 +98,40 @@ def patch_duration_ranges(graph, max_mel):
     return n_patch
 
 
+COMPARE_OPS = {
+    "Less",
+    "Greater",
+    "LessOrEqual",
+    "GreaterOrEqual",
+    "Equal",
+}
+
+
+def cast_comparisons_to_float(graph):
+    """TRT 8.5 rejects Less(Float, Int32). Encoder mask is arange vs x_length."""
+    new_nodes = []
+    n = 0
+    for node in graph.node:
+        if node.op_type in COMPARE_OPS and len(node.input) >= 2:
+            a, b = node.input[0], node.input[1]
+            a2 = "%s_cmp%d_a" % ((node.name or node.op_type).replace("/", "_"), n)
+            b2 = "%s_cmp%d_b" % ((node.name or node.op_type).replace("/", "_"), n)
+            new_nodes.append(
+                helper.make_node("Cast", [a], [a2], to=TensorProto.FLOAT, name=a2)
+            )
+            new_nodes.append(
+                helper.make_node("Cast", [b], [b2], to=TensorProto.FLOAT, name=b2)
+            )
+            node.input[0] = a2
+            node.input[1] = b2
+            n += 1
+        new_nodes.append(node)
+    del graph.node[:]
+    graph.node.extend(new_nodes)
+    print("cast_comparisons_to_float", n, flush=True)
+    return n
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="src", required=True)
@@ -110,6 +144,7 @@ def main():
     print("inputs_before", [i.name for i in model.graph.input], flush=True)
     fold_length_scale(model.graph, args.length_scale)
     patch_duration_ranges(model.graph, args.max_mel)
+    cast_comparisons_to_float(model.graph)
     print("inputs_after", [i.name for i in model.graph.input], flush=True)
     onnx.save(model, args.dst)
     print("wrote", args.dst, "bytes", __import__("os").path.getsize(args.dst), flush=True)
