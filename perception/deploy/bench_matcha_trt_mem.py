@@ -161,7 +161,22 @@ class _Cudart:
             raise RuntimeError("cudaMalloc(%s) returned NULL" % n)
         return int(p.value)
 
+    def d2h(self, src, host):
+        if not src:
+            return
+        buf = np.ascontiguousarray(host)
+        err = self.lib.cudaMemcpy(
+            buf.ctypes.data_as(self._c_void_p),
+            self._c_void_p(src),
+            buf.nbytes,
+            2,
+        )
+        if err:
+            raise RuntimeError("cudaMemcpy D2H failed err=%s" % err)
+
     def h2d(self, dst, host):
+        if not dst:
+            return
         buf = np.ascontiguousarray(host)
         err = self.lib.cudaMemcpy(
             self._c_void_p(dst),
