@@ -205,17 +205,32 @@ def main():
     tok2id = _load_tokens(os.path.join(args.model_dir, "tokens.txt"))
     lex = _load_lexicon(os.path.join(args.model_dir, "lexicon.txt"))
     ids, phones, skipped, missing = text_to_ids(args.text, lex, tok2id)
+    min_l = int(os.environ.get("TTS_TRT_MIN_TOKENS", "8"))
+    max_l = int(os.environ.get("TTS_TRT_MAX_TOKENS", "256"))
+    real_len = len(ids)
+    if real_len > max_l:
+        ids = ids[:max_l]
+        real_len = max_l
+        print("WARN truncate tokens to", max_l, flush=True)
+    pad_id = 0
+    if "<pad>" in tok2id:
+        pad_id = tok2id["<pad>"]
+    elif "pad" in tok2id:
+        pad_id = tok2id["pad"]
+    if real_len < min_l:
+        ids = ids + [pad_id] * (min_l - real_len)
+        print("pad tokens %s -> %s pad_id=%s" % (real_len, len(ids), pad_id), flush=True)
     print("text", args.text, flush=True)
-    print("n_tokens", len(ids), "ids", ids[:40], flush=True)
+    print("n_tokens_real", real_len, "n_tokens_pad", len(ids), "ids", ids[:40], flush=True)
     print("phones", " ".join(phones[:40]), flush=True)
     print("skipped", skipped, "missing_phone", missing[:20], flush=True)
-    if len(ids) < 2:
+    if real_len < 1:
         raise SystemExit("too few tokens")
     dump("F_frontend")
 
     feeds = {
         "x": np.asarray(ids, np.int32)[None, :],
-        "x_length": np.asarray([len(ids)], np.int32),
+        "x_length": np.asarray([real_len], np.int32),
         "noise_scale": np.asarray([0.667], np.float32),
     }
     t0 = time.time()
