@@ -32,13 +32,18 @@ PREVIEW="${TTS_TRT_PREVIEW:-}"
 TACTICS="${TTS_TRT_TACTICS:-}"
 BUILD_LOG="${TTS_TRT_BUILD_LOG:-/tmp/matcha_trt_build.log}"
 PATCHED_ONNX="/opt/matcha_trt_cache/model-steps-3.trtprep.L${MAX_TOKENS}.mel${MAX_MEL}.cmpf32.onnx"
-if [[ -n "$PREVIEW" ]]; then
+if [[ -n "${TTS_TRT_ENG_TAG:-}" ]]; then
+  ENG_TAG="$TTS_TRT_ENG_TAG"
+elif [[ -n "$PREVIEW" ]]; then
   ENG_TAG=$(printf '%s' "$PREVIEW" | sed 's/^+//;s/^-//;s/,/-/g;s/+/-/g' | tr '[:upper:]' '[:lower:]')
   BUILD_LOG="${TTS_TRT_BUILD_LOG:-/tmp/matcha_trt_build_${ENG_TAG}.log}"
 elif [[ -n "$TACTICS" ]]; then
   ENG_TAG=$(printf '%s' "$TACTICS" | sed 's/^-//;s/,/-/g;s/+//g' | tr '[:upper:]' '[:lower:]')
 else
   ENG_TAG="cmpf32"
+fi
+if [[ -n "$TACTICS" || -n "$PREVIEW" ]]; then
+  BUILD_LOG="${TTS_TRT_BUILD_LOG:-/tmp/matcha_trt_build_${ENG_TAG}.log}"
 fi
 ACOUSTIC_ENG_NAME="model-steps-3.trt8.5.fp16.ws${WS}.L${MAX_TOKENS}.mel${MAX_MEL}.${ENG_TAG}.engine"
 ACOUSTIC_ENG="/opt/matcha_trt_cache/${ACOUSTIC_ENG_NAME}"
