@@ -23,15 +23,17 @@ VOCOS_CACHE_HOST="${TTS_VOCOS_TRT_CACHE_HOST:-/tmp/vocos_trt_cache}"
 VOCOS_ENG_NAME="vocos-16khz-univ.trt8.5.fp16.ws64.nocublaslt.engine"
 BUILD_LOG="${TTS_VOCOS_TRT_BUILD_LOG:-/tmp/vocos_trt_build_nocublaslt.log}"
 NAME="${TTS_CKPT_NAME:-phanthymotus-tts-ckpt}"
-# 8GB JP5: ws4096 OOM-kills trtexec (rc=137) next to agent-core + perception.
-WS="${TTS_TRT_WORKSPACE_MB:-1024}"
+# 8GB JP5: builder peak is 4-6Gi unified memory, not "5GB VRAM".
+# ws4096/1024 both OOM-killed next to perception. 256 is enough to
+# search a non-CUBLAS_LT plan; it is not a 768MB runtime saving.
+WS="${TTS_TRT_WORKSPACE_MB:-256}"
 export TTS_TRT_WORKSPACE_MB="$WS"
 
 mkdir -p "$MATCHA_CACHE_HOST" "$VOCOS_CACHE_HOST"
 
 echo "======== OCR-style tactic: --tacticSources=-CUBLAS_LT ========"
 echo "Keep CUBLAS and CUDNN. Do not use -CUDNN / preview."
-echo "workspace=${WS}MB (ws4096 was OOM-killed on this 7.3Gi board)."
+echo "workspace=${WS}MB (builder peak; ws4096/1024 were OOM-killed)."
 echo
 
 # Acoustic: same patched ONNX / profiles as cmpf32, only CUBLAS_LT off.
