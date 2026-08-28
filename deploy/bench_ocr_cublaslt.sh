@@ -23,12 +23,15 @@ VOCOS_CACHE_HOST="${TTS_VOCOS_TRT_CACHE_HOST:-/tmp/vocos_trt_cache}"
 VOCOS_ENG_NAME="vocos-16khz-univ.trt8.5.fp16.ws64.nocublaslt.engine"
 BUILD_LOG="${TTS_VOCOS_TRT_BUILD_LOG:-/tmp/vocos_trt_build_nocublaslt.log}"
 NAME="${TTS_CKPT_NAME:-phanthymotus-tts-ckpt}"
+# 8GB JP5: ws4096 OOM-kills trtexec (rc=137) next to agent-core + perception.
+WS="${TTS_TRT_WORKSPACE_MB:-1024}"
+export TTS_TRT_WORKSPACE_MB="$WS"
 
 mkdir -p "$MATCHA_CACHE_HOST" "$VOCOS_CACHE_HOST"
 
 echo "======== OCR-style tactic: --tacticSources=-CUBLAS_LT ========"
 echo "Keep CUBLAS and CUDNN. Do not use -CUDNN / preview."
-echo "If CUDA 11.8 docker build is still running, stop it first (GPU+RAM)."
+echo "workspace=${WS}MB (ws4096 was OOM-killed on this 7.3Gi board)."
 echo
 
 # Acoustic: same patched ONNX / profiles as cmpf32, only CUBLAS_LT off.
@@ -36,9 +39,10 @@ MEASURE_LOG=/tmp/ocr_cublaslt_measure.log
 TTS_TRT_TACTICS=-CUBLAS_LT \
   TTS_TRT_ENG_TAG=nocublaslt \
   TTS_TRT_BUILD_LOG=/tmp/matcha_trt_build_nocublaslt.log \
+  TTS_TRT_WORKSPACE_MB="$WS" \
   bash "$ROOT/deploy/bench_matcha_trt_mem.sh" "$IMAGE" | tee "$MEASURE_LOG"
 
-MATCHA_HOST="$MATCHA_CACHE_HOST/model-steps-3.trt8.5.fp16.ws4096.L256.mel2000.nocublaslt.engine"
+MATCHA_HOST="$MATCHA_CACHE_HOST/model-steps-3.trt8.5.fp16.ws${WS}.L256.mel2000.nocublaslt.engine"
 if [[ ! -f "$MATCHA_HOST" ]]; then
   echo "FATAL: missing $MATCHA_HOST" >&2
   exit 1
