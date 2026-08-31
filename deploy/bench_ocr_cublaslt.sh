@@ -1,50 +1,65 @@
 #!/usr/bin/env bash
-# OCR JP5 recipe on Matcha/Vocos: disable CUBLAS_LT, keep CUBLAS + CUDNN.
+# OCR JP5 tactic A/B. Does not overwrite cmpf32. Does not change judgeflow.
 #
-# OCR rec: cuBLAS_LT 1528MiB -> CUBLAS-only 699MiB. Cause is JP5 CUDA 11.4
-# having no module lazy loading; a CUBLAS_LT tactic keeps the whole library
-# resident. We never tried this flag. Previous attempts were different:
-#   --tacticSources=-CUDNN          -> execute divUp n>0, peak unchanged
-#   preview disableExternal...0805  -> same crash, peak unchanged
-#
-# Does not overwrite cmpf32 / default Vocos engines. Does not change judgeflow.
+# PPT rec is CUBLAS-only (not "keep CUDNN"). First run was only -CUBLAS_LT;
+# that is a different experiment. Mode cublas_only is the PPT replay:
+#   --tacticSources=-CUBLAS_LT,-CUDNN
 #
 #   IMAGE=phanthymotus-perception-tts:e19aee0
-#   bash deploy/bench_ocr_cublaslt.sh "$IMAGE"
+#   bash deploy/bench_ocr_cublaslt.sh "$IMAGE" cublas_only
+#
+# Other modes: nocublaslt | cublas_strict (also drop EDGE_MASK_CONVOLUTIONS)
 set -euo pipefail
 
 IMAGE="${1:?image required}"
+MODE="${2:-${OCR_MODE:-cublas_only}}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LIVE="${TTS_LIVE_CONTAINER:-phanthymotus-perception-tts-0}"
 MODEL_DIR="${TTS_MODEL_DIR:-/models/matcha-kai-16k-e500}"
 HOST_MODEL="${TTS_HOST_MODEL:-/tmp/matcha-kai-16k-e500-ckpt}"
 MATCHA_CACHE_HOST="${TTS_MATCHA_TRT_CACHE_HOST:-/tmp/matcha_trt_cache}"
 VOCOS_CACHE_HOST="${TTS_VOCOS_TRT_CACHE_HOST:-/tmp/vocos_trt_cache}"
-VOCOS_ENG_NAME="vocos-16khz-univ.trt8.5.fp16.ws64.nocublaslt.engine"
-BUILD_LOG="${TTS_VOCOS_TRT_BUILD_LOG:-/tmp/vocos_trt_build_nocublaslt.log}"
 NAME="${TTS_CKPT_NAME:-phanthymotus-tts-ckpt}"
-# 8GB JP5: builder peak is 4-6Gi unified memory, not "5GB VRAM".
-# ws4096/1024 both OOM-killed next to perception. 256 is enough to
-# search a non-CUBLAS_LT plan; it is not a 768MB runtime saving.
 WS="${TTS_TRT_WORKSPACE_MB:-256}"
 export TTS_TRT_WORKSPACE_MB="$WS"
 
+case "$MODE" in
+  nocublaslt)
+    TACTICS="-CUBLAS_LT"
+    TAG="nocublaslt"
+    ;;
+  cublas_only)
+    TACTICS="-CUBLAS_LT,-CUDNN"
+    TAG="cublas_only"
+    ;;
+  cublas_strict)
+    TACTICS="-CUBLAS_LT,-CUDNN,-EDGE_MASK_CONVOLUTIONS"
+    TAG="cublas_strict"
+    ;;
+  *)
+    echo "FATAL: mode must be nocublaslt | cublas_only | cublas_strict (got $MODE)" >&2
+    exit 2
+    ;;
+esac
+
+VOCOS_ENG_NAME="vocos-16khz-univ.trt8.5.fp16.ws64.${TAG}.engine"
+BUILD_LOG="${TTS_VOCOS_TRT_BUILD_LOG:-/tmp/vocos_trt_build_${TAG}.log}"
+MEASURE_LOG="/tmp/ocr_${TAG}_measure.log"
+MATCHA_HOST="$MATCHA_CACHE_HOST/model-steps-3.trt8.5.fp16.ws${WS}.L256.mel2000.${TAG}.engine"
+
 mkdir -p "$MATCHA_CACHE_HOST" "$VOCOS_CACHE_HOST"
 
-echo "======== OCR-style tactic: --tacticSources=-CUBLAS_LT ========"
-echo "Keep CUBLAS and CUDNN. Do not use -CUDNN / preview."
-echo "workspace=${WS}MB (builder peak; ws4096/1024 were OOM-killed)."
+echo "======== OCR tactic mode=$MODE --tacticSources=$TACTICS ========"
+echo "workspace=${WS}MB  tag=$TAG"
+echo "PPT rec = CUBLAS-only. nocublaslt keeps CUDNN; that is not the PPT case."
 echo
 
-# Acoustic: same patched ONNX / profiles as cmpf32, only CUBLAS_LT off.
-MEASURE_LOG=/tmp/ocr_cublaslt_measure.log
-TTS_TRT_TACTICS=-CUBLAS_LT \
-  TTS_TRT_ENG_TAG=nocublaslt \
-  TTS_TRT_BUILD_LOG=/tmp/matcha_trt_build_nocublaslt.log \
+TTS_TRT_TACTICS="$TACTICS" \
+  TTS_TRT_ENG_TAG="$TAG" \
+  TTS_TRT_BUILD_LOG="/tmp/matcha_trt_build_${TAG}.log" \
   TTS_TRT_WORKSPACE_MB="$WS" \
   bash "$ROOT/deploy/bench_matcha_trt_mem.sh" "$IMAGE" | tee "$MEASURE_LOG"
 
-MATCHA_HOST="$MATCHA_CACHE_HOST/model-steps-3.trt8.5.fp16.ws${WS}.L256.mel2000.nocublaslt.engine"
 if [[ ! -f "$MATCHA_HOST" ]]; then
   echo "FATAL: missing $MATCHA_HOST" >&2
   exit 1
@@ -52,8 +67,9 @@ fi
 
 if ! grep -q 'warmup_ok' "$MEASURE_LOG"; then
   echo
-  echo "STOP: nocublaslt Matcha engine did not warmup_ok."
-  echo "Do not fullstack. Paste warmup_/divUp/host_cgroup from $MEASURE_LOG."
+  echo "STOP: $TAG Matcha did not warmup_ok (divUp / execute_v2)."
+  echo "PPT CUBLAS-only does not run on this Matcha graph if CUDNN is required."
+  echo "Do not fullstack. Paste warmup_/divUp from $MEASURE_LOG."
   exit 1
 fi
 
@@ -77,14 +93,14 @@ ensure_host_vocos_onnx() {
 }
 
 echo
-echo "======== Vocos engine with --tacticSources=-CUBLAS_LT ========"
+echo "======== Vocos --tacticSources=$TACTICS ========"
 if [[ -f "$VOCOS_CACHE_HOST/$VOCOS_ENG_NAME" ]]; then
   echo "[build] reuse $VOCOS_CACHE_HOST/$VOCOS_ENG_NAME"
   ls -lah "$VOCOS_CACHE_HOST/$VOCOS_ENG_NAME"
 else
   ensure_host_vocos_onnx
   docker rm -f "$NAME-vocos-build" >/dev/null 2>&1 || true
-  echo "[build] vocos nocublaslt log -> $BUILD_LOG"
+  echo "[build] vocos $TAG log -> $BUILD_LOG"
   docker run --rm --name "$NAME-vocos-build" \
     --runtime nvidia --privileged \
     -e NVIDIA_VISIBLE_DEVICES=all \
@@ -102,7 +118,7 @@ test -x "$exe" || exe=/usr/bin/trtexec
 "$exe" --onnx='"$MODEL_DIR"'/vocos-16khz-univ.onnx \
   --saveEngine=/opt/vocos_trt_cache/'"$VOCOS_ENG_NAME"'.tmp \
   --fp16 --workspace=64 \
-  --tacticSources=-CUBLAS_LT \
+  --tacticSources='"$TACTICS"' \
   --minShapes=${INP}:1x80x16 --optShapes=${INP}:1x80x256 --maxShapes=${INP}:1x80x2000
 mv -f /opt/vocos_trt_cache/'"$VOCOS_ENG_NAME"'.tmp \
       /opt/vocos_trt_cache/'"$VOCOS_ENG_NAME"'
@@ -111,20 +127,20 @@ ls -lah /opt/vocos_trt_cache/'"$VOCOS_ENG_NAME"'
   echo "----- vocos trtexec summary -----"
   grep -E '\[E\]|&&&& |PASSED|FAILED|tacticSources' "$BUILD_LOG" | grep -v 'onnx2trt_utils.cpp:403' || true
   if [[ ! -f "$VOCOS_CACHE_HOST/$VOCOS_ENG_NAME" ]]; then
-    echo "FATAL: vocos nocublaslt build failed. log $BUILD_LOG" >&2
+    echo "FATAL: vocos $TAG build failed. log $BUILD_LOG" >&2
     exit 1
   fi
   echo "[build] ok $VOCOS_CACHE_HOST/$VOCOS_ENG_NAME"
 fi
 
 echo
-echo "======== fullstack nocublaslt (judgeflow-equivalent) ========"
-TTS_BENCH_LABEL=ocr-nocublaslt \
+echo "======== fullstack $TAG (judgeflow-equivalent) ========"
+TTS_BENCH_LABEL="ocr-$TAG" \
   TTS_MATCHA_TRT_ENGINE_HOST="$MATCHA_HOST" \
   TTS_VOCOS_TRT_ENGINE_HOST="$VOCOS_CACHE_HOST/$VOCOS_ENG_NAME" \
   bash "$ROOT/deploy/bench_matcha_trt_full.sh" "$IMAGE"
 
 echo
-echo "Compare to default-tactic fullstack ~1345MB / sherpa ~1374MB."
+echo "Compare: default ~1345 | -CUBLAS_LT ~1269 | this $TAG ???"
 echo "Need: warmup_ok, EXTRA_TTS ok=True, host_cgroup max_MB."
-echo "If max still ~1.3GB, CUBLAS_LT is not the Matcha tax; stop, do not change judgeflow."
+echo "If execute fails: Matcha needs CUDNN; PPT CUBLAS-only does not apply."
