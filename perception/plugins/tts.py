@@ -203,6 +203,37 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     return ort, ["CPUExecutionProvider"]
 
 
+def _phonetone_acoustic_path(model_dir: str) -> str:
+    import os
+
+    return os.path.join(model_dir, "model-steps-10.onnx")
+
+
+def _phonetone_vocoder_path(model_dir: str) -> str:
+    import os
+
+    return os.path.join(model_dir, "bigvgan.onnx")
+
+
+class _WaveformOrt:
+    """BigVGAN (or any mel→wav) ONNX. Not Vocos mag/x/y."""
+
+    def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
+        ort, providers = _piper_ort_providers(hw_provider)
+        so = ort.SessionOptions()
+        so.intra_op_num_threads = max(1, int(num_threads))
+        self._sess = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)
+        self._in = self._sess.get_inputs()[0].name
+
+    def infer(self, mel_bct):
+        import numpy as np
+
+        wav = self._sess.run(None, {self._in: np.ascontiguousarray(mel_bct, dtype=np.float32)})[0]
+        wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+        cap = int(mel_bct.shape[-1]) * 256
+        return wav[:cap]
+
+
 _maybe_set_cpu_affinity()
 
 # US English letter NAMES (not article/pronoun). Merged into product lexicon so
@@ -1257,7 +1288,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
 
 
 class MatchaPhoneToneOrtAdapter(TTSAdapter):
-    """Gentleman PhoneTone frontend + Matcha/Vocos ORT CUDA. Not sherpa Matcha."""
+    """Gentleman PhoneTone frontend + Matcha/BigVGAN ORT CUDA. Not sherpa Matcha."""
 
     def __init__(
         self,
@@ -1274,7 +1305,6 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
 
         from utils.model_downloader import ensure_model
         from utils.phonetone import PhoneToneFrontend, encode_for_matcha
-        from utils.vocos_trt import VocosTRT
 
         ensure_model(model_name, model_dir)
         self._frontend = PhoneToneFrontend(model_dir)
@@ -1284,8 +1314,8 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         self._noise_scale = float(noise_scale)
         self.max_segment_chars = MAX_SEGMENT_CHARS
         self.text_normalize = False
-        acoustic = os.path.join(model_dir, "model-steps-3.onnx")
-        vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
+        acoustic = _phonetone_acoustic_path(model_dir)
+        vocoder = _phonetone_vocoder_path(model_dir)
         if not os.path.isfile(acoustic):
             raise FileNotFoundError(acoustic)
         if not os.path.isfile(vocoder):
@@ -1294,8 +1324,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         so = ort.SessionOptions()
         so.intra_op_num_threads = max(1, int(num_threads))
         self._sess = ort.InferenceSession(acoustic, sess_options=so, providers=providers)
-        cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
-        self._vocos = VocosTRT(vocoder, cache)
+        self._vocoder = _WaveformOrt(vocoder, hw_provider, num_threads)
         self._model_sr = 16000
         log.info(
             "[tts] PhoneTone ORT loaded: model_dir=%s providers=%s frontend=%s",
@@ -1330,7 +1359,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         if mel is None:
             raise RuntimeError("no mel in %s" % names)
         cropped = crop_mel(mel, packed["real_len"])
-        samples = self._vocos.infer(np.ascontiguousarray(cropped[None, ...], dtype=np.float32))
+        samples = self._vocoder.infer(np.ascontiguousarray(cropped[None, ...], dtype=np.float32))
         samples = _resample_to_16k(samples, self._model_sr)
         return _float_samples_to_pcm16(samples)
 
@@ -1362,7 +1391,8 @@ class MatchaTRTAdapter(TTSAdapter):
         from utils.vocos_trt import VocosTRT, _Cudart
 
         ensure_model(model_name, model_dir)
-        ensure_model("tts_vocoder", model_dir)
+        if not (model_name == "tts_matcha_gentleman" or os.path.isfile(os.path.join(model_dir, "bigvgan.onnx"))):
+            ensure_model("tts_vocoder", model_dir)
         if wetext_dir:
             try:
                 ensure_model("tts_wetext", wetext_dir)
@@ -1380,14 +1410,22 @@ class MatchaTRTAdapter(TTSAdapter):
         self._phonetone = is_phonetone_dir(model_dir) or model_name == "tts_matcha_gentleman"
         tokens_path = os.path.join(model_dir, "tokens.txt")
         lexicon_path = os.path.join(model_dir, "lexicon.txt")
-        vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
+        vocoder = (
+            _phonetone_vocoder_path(model_dir)
+            if self._phonetone
+            else os.path.join(model_dir, "vocos-16khz-univ.onnx")
+        )
         cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
         matcha_cache = os.environ.get("TTS_MATCHA_TRT_CACHE", "/opt/matcha_trt_cache")
         engine = resolve_acoustic_engine(matcha_cache)
-        # Ranking looks at memory.max_usage. Deserialize TRT first so WeText
-        # does not sit on top of the engine-bytes + deserialize spike.
         load_order = os.environ.get("TTS_TRT_LOAD_ORDER", "trt_first").strip()
         self._cudart = _Cudart()
+        self._use_bigvgan = self._phonetone and os.path.basename(vocoder) == "bigvgan.onnx"
+        vocoder_rt = (
+            _WaveformOrt(vocoder, hw_provider, num_threads)
+            if self._use_bigvgan
+            else VocosTRT(vocoder, cache, cudart=self._cudart)
+        )
         if load_order == "frontend_first":
             self._frontend = (
                 PhoneToneFrontend(model_dir)
@@ -1397,10 +1435,10 @@ class MatchaTRTAdapter(TTSAdapter):
             self._tok2id = {} if self._phonetone else load_tokens(tokens_path)
             self._lex = {} if self._phonetone else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
             self._acoustic = AcousticTRT(engine, self._cudart)
-            self._vocos = VocosTRT(vocoder, cache, cudart=self._cudart)
+            self._vocos = vocoder_rt
         else:
             self._acoustic = AcousticTRT(engine, self._cudart)
-            self._vocos = VocosTRT(vocoder, cache, cudart=self._cudart)
+            self._vocos = vocoder_rt
             import gc
 
             gc.collect()

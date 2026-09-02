@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import tarfile
 import tempfile
 import zipfile
@@ -15,6 +16,8 @@ log = logging.getLogger(__name__)
 
 COS_BASE = "https://agi-phanthy-dev-1252788780.cos.ap-beijing.myqcloud.com/public"
 JUICEFS_BASE = "http://172.28.4.81:34567/fanyi/phanthymotus_tts"
+# Same JuiceFS data disk the tar lives on. Prefer this over HTTP when present.
+JUICEFS_LOCAL = os.environ.get("TTS_JUICEFS_DIR", "/mnt/data/fanyi/phanthymotus_tts")
 
 
 def _progress_hook(name: str):
@@ -57,7 +60,7 @@ MODELS = {
     },
     "tts_matcha_gentleman": {
         "url": f"{JUICEFS_BASE}/matcha-gentleman-phonetone-16k.tar.bz2",
-        "check_file": "model-steps-3.onnx",
+        "check_file": "bigvgan.onnx",
     },
     # WeText TN graphs (tagger+verbalizer). JuiceFS only — never git.
     "tts_wetext": {
@@ -156,8 +159,14 @@ MODELS = {
 }
 
 
+def _local_juicefs_src(url: str) -> str | None:
+    name = os.path.basename(url.split("?", 1)[0])
+    path = os.path.join(JUICEFS_LOCAL, name)
+    return path if os.path.isfile(path) else None
+
+
 def ensure_model(name: str, model_dir: str) -> None:
-    """Ensure model files exist in model_dir. Download if missing."""
+    """Ensure model files exist in model_dir. Load from data disk, else HTTP."""
     info = MODELS.get(name)
     if not info:
         raise ValueError(f"Unknown model name: {name}")
@@ -169,15 +178,35 @@ def ensure_model(name: str, model_dir: str) -> None:
 
     url = info["url"]
     os.makedirs(model_dir, exist_ok=True)
-    log.info(f"[model_downloader] {name}: downloading from {url} ...")
+    local = _local_juicefs_src(url)
 
     if info.get("single_file"):
         dest = os.path.join(model_dir, info["check_file"])
-        urlretrieve(url, dest, reporthook=_progress_hook(name))
+        if local:
+            log.info(f"[model_downloader] {name}: copy from data disk {local}")
+            shutil.copy2(local, dest)
+        else:
+            log.info(f"[model_downloader] {name}: downloading from {url} ...")
+            urlretrieve(url, dest, reporthook=_progress_hook(name))
         log.info(f"[model_downloader] {name}: done.")
         return
 
     suffix = ".zip" if url.endswith(".zip") else ".tar.bz2"
+    if local:
+        log.info(f"[model_downloader] {name}: extract from data disk {local}")
+        if suffix == ".zip":
+            _extract_zip(local, model_dir)
+        else:
+            _extract_tar(local, model_dir)
+        log.info(f"[model_downloader] {name}: done.")
+        if not os.path.exists(check_path):
+            raise RuntimeError(
+                f"[model_downloader] {name}: local extract completed but "
+                f"{info['check_file']} not found in {model_dir}"
+            )
+        return
+
+    log.info(f"[model_downloader] {name}: downloading from {url} ...")
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
 
