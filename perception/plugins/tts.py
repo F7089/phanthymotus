@@ -1256,8 +1256,87 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
         return pcm
 
 
+class MatchaPhoneToneOrtAdapter(TTSAdapter):
+    """Gentleman PhoneTone frontend + Matcha/Vocos ORT CUDA. Not sherpa Matcha."""
+
+    def __init__(
+        self,
+        model_dir: str,
+        speaker_id: int = 0,
+        speed: float = 1.0,
+        model_name: str = "tts_matcha_gentleman",
+        hw_provider: str = "cuda",
+        num_threads: int = 2,
+        noise_scale: float = 0.667,
+        wetext_dir: str = "",
+    ):
+        import os
+
+        from utils.model_downloader import ensure_model
+        from utils.phonetone import PhoneToneFrontend, encode_for_matcha
+        from utils.vocos_trt import VocosTRT
+
+        ensure_model(model_name, model_dir)
+        self._frontend = PhoneToneFrontend(model_dir)
+        self._encode = encode_for_matcha
+        self._sid = speaker_id
+        self._speed = speed
+        self._noise_scale = float(noise_scale)
+        self.max_segment_chars = MAX_SEGMENT_CHARS
+        self.text_normalize = False
+        acoustic = os.path.join(model_dir, "model-steps-3.onnx")
+        vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
+        if not os.path.isfile(acoustic):
+            raise FileNotFoundError(acoustic)
+        if not os.path.isfile(vocoder):
+            raise FileNotFoundError(vocoder)
+        ort, providers = _piper_ort_providers(hw_provider)
+        so = ort.SessionOptions()
+        so.intra_op_num_threads = max(1, int(num_threads))
+        self._sess = ort.InferenceSession(acoustic, sess_options=so, providers=providers)
+        cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
+        self._vocos = VocosTRT(vocoder, cache)
+        self._model_sr = 16000
+        log.info(
+            "[tts] PhoneTone ORT loaded: model_dir=%s providers=%s frontend=%s",
+            model_dir,
+            self._sess.get_providers(),
+            self._frontend.release,
+        )
+
+    def split_text(self, text: str) -> list[str]:
+        text = self._frontend.normalize(text)
+        text = (text or "").strip()
+        if not text:
+            return []
+        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
+        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
+            return [text]
+        return _split_text_for_tts(text, max_chars)
+
+    def _synthesize_segment(self, text: str) -> bytes:
+        import numpy as np
+        from utils.matcha_trt import crop_mel
+
+        packed = self._encode(text, temperature=self._noise_scale, length_scale=1.0 / max(self._speed, 1e-3))
+        feeds = {name: packed[name] for name in ("x", "x_lengths", "tones", "languages", "scales")}
+        in_names = {i.name for i in self._sess.get_inputs()}
+        if "x_length" in in_names and "x_lengths" not in in_names:
+            feeds["x_length"] = feeds.pop("x_lengths")
+        outs = self._sess.run(None, feeds)
+        names = [o.name for o in self._sess.get_outputs()]
+        ac_out = dict(zip(names, outs))
+        mel = ac_out.get("mel")
+        if mel is None:
+            raise RuntimeError("no mel in %s" % names)
+        cropped = crop_mel(mel, packed["real_len"])
+        samples = self._vocos.infer(np.ascontiguousarray(cropped[None, ...], dtype=np.float32))
+        samples = _resample_to_16k(samples, self._model_sr)
+        return _float_samples_to_pcm16(samples)
+
+
 class MatchaTRTAdapter(TTSAdapter):
-    """Matcha WeText+lexicon frontend + acoustic/Vocos TensorRT. No sherpa CUDA."""
+    """Matcha acoustic/Vocos TensorRT. PhoneTone pack uses V1 frontend; kai uses WeText+lexicon."""
 
     def __init__(
         self,
@@ -1296,6 +1375,9 @@ class MatchaTRTAdapter(TTSAdapter):
         self._noise_scale = float(noise_scale)
         self.max_segment_chars = MAX_SEGMENT_CHARS
         self.text_normalize = False
+        from utils.phonetone import PhoneToneFrontend, is_phonetone_dir
+
+        self._phonetone = is_phonetone_dir(model_dir) or model_name == "tts_matcha_gentleman"
         tokens_path = os.path.join(model_dir, "tokens.txt")
         lexicon_path = os.path.join(model_dir, "lexicon.txt")
         vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
@@ -1307,9 +1389,13 @@ class MatchaTRTAdapter(TTSAdapter):
         load_order = os.environ.get("TTS_TRT_LOAD_ORDER", "trt_first").strip()
         self._cudart = _Cudart()
         if load_order == "frontend_first":
-            self._frontend = MatchaTextFrontend(wetext_dir or None)
-            self._tok2id = load_tokens(tokens_path)
-            self._lex = load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {}
+            self._frontend = (
+                PhoneToneFrontend(model_dir)
+                if self._phonetone
+                else MatchaTextFrontend(wetext_dir or None)
+            )
+            self._tok2id = {} if self._phonetone else load_tokens(tokens_path)
+            self._lex = {} if self._phonetone else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
             self._acoustic = AcousticTRT(engine, self._cudart)
             self._vocos = VocosTRT(vocoder, cache, cudart=self._cudart)
         else:
@@ -1318,9 +1404,13 @@ class MatchaTRTAdapter(TTSAdapter):
             import gc
 
             gc.collect()
-            self._frontend = MatchaTextFrontend(wetext_dir or None)
-            self._tok2id = load_tokens(tokens_path)
-            self._lex = load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {}
+            self._frontend = (
+                PhoneToneFrontend(model_dir)
+                if self._phonetone
+                else MatchaTextFrontend(wetext_dir or None)
+            )
+            self._tok2id = {} if self._phonetone else load_tokens(tokens_path)
+            self._lex = {} if self._phonetone else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
         self._model_sr = 16000
         mem_after = _process_rss_mb()
         log.info(
@@ -1350,23 +1440,36 @@ class MatchaTRTAdapter(TTSAdapter):
         import numpy as np
         from utils.matcha_trt import crop_mel, pad_token_ids, text_to_ids
 
-        ids, phones, skipped, missing = text_to_ids(text, self._lex, self._tok2id)
-        ids, real_len = pad_token_ids(ids, self._tok2id)
-        if real_len < 1:
-            log.warning("[tts] TRT skip empty tokens text=%r skipped=%s", text, skipped)
-            return b""
-        if skipped or missing:
-            log.info(
-                "[tts] TRT g2p skipped=%s missing=%s phones=%s",
-                skipped[:20],
-                missing[:20],
-                " ".join(phones[:24]),
-            )
-        feeds = {
-            "x": np.asarray(ids, np.int32)[None, :],
-            "x_length": np.asarray([real_len], np.int32),
-            "noise_scale": np.asarray([self._noise_scale], np.float32),
-        }
+        if self._phonetone:
+            from utils.phonetone import encode_for_matcha
+
+            enc = encode_for_matcha(text, temperature=self._noise_scale, length_scale=1.0 / max(self._speed, 1e-6))
+            feeds = {
+                "x": enc["x"],
+                "x_lengths": enc["x_lengths"],
+                "tones": enc["tones"],
+                "languages": enc["languages"],
+                "scales": enc["scales"],
+            }
+            real_len = int(enc["real_len"])
+        else:
+            ids, phones, skipped, missing = text_to_ids(text, self._lex, self._tok2id)
+            ids, real_len = pad_token_ids(ids, self._tok2id)
+            if real_len < 1:
+                log.warning("[tts] TRT skip empty tokens text=%r skipped=%s", text, skipped)
+                return b""
+            if skipped or missing:
+                log.info(
+                    "[tts] TRT g2p skipped=%s missing=%s phones=%s",
+                    skipped[:20],
+                    missing[:20],
+                    " ".join(phones[:24]),
+                )
+            feeds = {
+                "x": np.asarray(ids, np.int32)[None, :],
+                "x_length": np.asarray([real_len], np.int32),
+                "noise_scale": np.asarray([self._noise_scale], np.float32),
+            }
         ac_out = self._acoustic.infer(feeds)
         mel = ac_out.get("mel")
         if mel is None:
@@ -1439,8 +1542,14 @@ def _build_tts_adapter(cfg: dict) -> TTSAdapter:
             noise_scale=float(cfg.get("noise_scale", 0.667)),
             wetext_dir=str(cfg.get("wetext_dir", "") or ""),
         )
+        phonetone = (
+            str(cfg.get("model_name", "")).endswith("gentleman")
+            or os.path.isfile(os.path.join(model_dir, "frontend_release", "opencpop-strict.txt"))
+        )
         if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
             adapter = MatchaTRTAdapter(**trt_kw)
+        elif phonetone:
+            adapter = MatchaPhoneToneOrtAdapter(**trt_kw)
         else:
             adapter = SherpaOnnxTTSAdapter(**trt_kw)
     else:

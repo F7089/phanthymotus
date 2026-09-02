@@ -19,20 +19,18 @@ plugins:
 
   tts:
     enabled: true
-    # Matcha e500: kai and lufeng are separate JuiceFS tars. Vocos is inside each tar.
+    # Gentleman PhoneTone V1: jieba + ToneSandhi + 94 phone. Not kai lexicon.
     backend: matcha
-    model_name: tts_matcha_kai
-    model_dir: /models/matcha-kai-16k-e500
+    model_name: tts_matcha_gentleman
+    model_dir: /models/matcha-gentleman-phonetone-16k
     hw_provider: cuda
-    # Ranking default: TTS_MATCHA_TRT=1 in judgeflow_tts_run.sh (native TRT,
-    # cmpf32 engine on host cache). sherpa dual CUDA if TTS_MATCHA_TRT=0.
+    # JP5: TTS_MATCHA_TRT=1 native TRT (rebuild cmpf32 from this ONNX).
+    # JP6: TTS_MATCHA_TRT=0 PhoneTone ORT CUDA — sherpa cannot load tones/languages.
     num_threads: 2
     speaker_id: 0
     speed: 1.0
-    # Matcha frontend (letter rules + optional WeText). Do not stack sherpa
-    # phone/date/number FSTs when wetext_dir is present.
     text_normalize: false
-    wetext_dir: /models/wetext
+    wetext_dir: ""
     max_segment_chars: 80
     prefer_single_pass: true
     warmup: true

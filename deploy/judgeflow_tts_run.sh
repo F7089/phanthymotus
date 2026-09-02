@@ -122,6 +122,9 @@ if [[ -f "$ROOT/perception/plugins/tts.py" ]]; then
     -v "$ROOT/perception/plugins/tts.py:/work/plugins/tts.py:ro"
     -v "$ROOT/perception/utils/matcha_trt.py:/work/utils/matcha_trt.py:ro"
     -v "$ROOT/perception/utils/vocos_trt.py:/work/utils/vocos_trt.py:ro"
+    -v "$ROOT/perception/utils/model_downloader.py:/work/utils/model_downloader.py:ro"
+    -v "$ROOT/perception/utils/phonetone:/work/utils/phonetone:ro"
+    -v "$ROOT/perception/config.yaml:/work/config.yaml:ro"
     -v "$ROOT/perception/main.py:/work/main.py:ro"
   )
 fi

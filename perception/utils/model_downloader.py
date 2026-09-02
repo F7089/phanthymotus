@@ -55,6 +55,10 @@ MODELS = {
         "url": f"{JUICEFS_BASE}/matcha-lufeng-16k-e500.tar.bz2",
         "check_file": "model-steps-3.onnx",
     },
+    "tts_matcha_gentleman": {
+        "url": f"{JUICEFS_BASE}/matcha-gentleman-phonetone-16k.tar.bz2",
+        "check_file": "model-steps-3.onnx",
+    },
     # WeText TN graphs (tagger+verbalizer). JuiceFS only — never git.
     "tts_wetext": {
         "url": f"{JUICEFS_BASE}/wetext.tar.bz2",
