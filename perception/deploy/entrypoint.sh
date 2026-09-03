@@ -6,6 +6,9 @@ set -eo pipefail
 log() { echo "[entrypoint] $*" >&2; }
 
 export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
+# Jetson unified memory: ORT/glibc otherwise grow with free RAM (1.6GB -> 1.8GB).
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+export TTS_ORT_DEVICE_INITIALIZERS="${TTS_ORT_DEVICE_INITIALIZERS:-0}"
 
 # ROS DDS: do not set ROS_DOMAIN_ID in the image — judgeflow injects it at
 # docker run (must match robot-tts-evaluation). Log runtime values for debug.
@@ -69,7 +72,7 @@ TRTPY
     export TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     export TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     export TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"
-    export TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-512}"
+    export TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-384}"
     export TTS_SHERPA_ORT_CONFIG="${TTS_SHERPA_ORT_CONFIG:-/deploy/ort_cuda_jp5.config}"
     log "ort mem: TRT=${TTS_ORT_USE_TRT} workspace=${TTS_ORT_CUDNN_MAX_WORKSPACE} arena=${TTS_ORT_ARENA_EXTEND} gpu_mem_limit_mb=${TTS_ORT_GPU_MEM_LIMIT_MB}"
 

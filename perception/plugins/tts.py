@@ -215,7 +215,7 @@ def _ort_lowmem_session_options(ort, num_threads: int):
     so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     if os.environ.get("TTS_ORT_DISABLE_PREPACKING", "1") == "1":
         so.add_session_config_entry("session.disable_prepacking", "1")
-    if os.environ.get("TTS_ORT_DEVICE_INITIALIZERS", "1") == "1":
+    if os.environ.get("TTS_ORT_DEVICE_INITIALIZERS", "0") == "1":
         so.add_session_config_entry("session.use_device_allocator_for_initializers", "1")
     level = os.environ.get("TTS_ORT_GRAPH_OPT", "all").strip().lower()
     mapping = {
