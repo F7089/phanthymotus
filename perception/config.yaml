@@ -24,8 +24,7 @@ plugins:
     model_name: tts_matcha_gentleman
     model_dir: /models/matcha-gentleman-phonetone-16k
     hw_provider: cuda
-    # JP5: TTS_MATCHA_TRT=1 native TRT (rebuild cmpf32 from this ONNX).
-    # JP6: TTS_MATCHA_TRT=0 PhoneTone ORT CUDA — sherpa cannot load tones/languages.
+    # JP5/JP6: TTS_MATCHA_TRT=0 PhoneTone ORT CUDA. TRT cmpf32 目前峰值更高，先不用。
     num_threads: 2
     speaker_id: 0
     speed: 1.0

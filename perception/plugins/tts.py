@@ -203,10 +203,51 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     return ort, ["CPUExecutionProvider"]
 
 
+def _ort_lowmem_session_options(ort, num_threads: int):
+    """SessionOptions used by Gentleman Matcha/BigVGAN. Melo already uses these knobs."""
+    import os
+
+    so = ort.SessionOptions()
+    so.enable_cpu_mem_arena = os.environ.get("TTS_ORT_CPU_ARENA", "0") == "1"
+    so.enable_mem_pattern = os.environ.get("TTS_ORT_MEM_PATTERN", "1") != "0"
+    so.intra_op_num_threads = max(1, int(num_threads))
+    so.inter_op_num_threads = 1
+    so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    if os.environ.get("TTS_ORT_DISABLE_PREPACKING", "1") == "1":
+        so.add_session_config_entry("session.disable_prepacking", "1")
+    if os.environ.get("TTS_ORT_DEVICE_INITIALIZERS", "1") == "1":
+        so.add_session_config_entry("session.use_device_allocator_for_initializers", "1")
+    level = os.environ.get("TTS_ORT_GRAPH_OPT", "all").strip().lower()
+    mapping = {
+        "off": ort.GraphOptimizationLevel.ORT_DISABLE_ALL,
+        "basic": ort.GraphOptimizationLevel.ORT_ENABLE_BASIC,
+        "extended": ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
+        "all": ort.GraphOptimizationLevel.ORT_ENABLE_ALL,
+    }
+    if level in mapping:
+        so.graph_optimization_level = mapping[level]
+    return so
+
+
+def _dump_stage(tag: str) -> None:
+    if os.environ.get("TTS_DUMP_CGROUP", "0") != "1":
+        return
+    try:
+        from utils.matcha_trt import dump_fullstack_peak
+
+        dump_fullstack_peak(tag)
+    except Exception as e:
+        log.warning("[tts] stage dump %s failed: %s", tag, e)
+
+
 def _phonetone_acoustic_path(model_dir: str) -> str:
     import os
 
-    return os.path.join(model_dir, "model-steps-10.onnx")
+    for name in ("model-steps-3.onnx", "model-steps-10.onnx"):
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            return path
+    return os.path.join(model_dir, "model-steps-3.onnx")
 
 
 def _phonetone_vocoder_path(model_dir: str) -> str:
@@ -215,22 +256,64 @@ def _phonetone_vocoder_path(model_dir: str) -> str:
     return os.path.join(model_dir, "bigvgan.onnx")
 
 
+def _use_ort_iobinding(sess) -> bool:
+    import os
+
+    return (
+        os.environ.get("TTS_ORT_IOBINDING", "1") == "1"
+        and "CUDAExecutionProvider" in sess.get_providers()
+    )
+
+
+def _ort_run(ort, sess, feeds: dict) -> dict:
+    """Run ORT. CUDA IOBinding keeps tensors on GPU until .numpy()."""
+    import numpy as np
+
+    if _use_ort_iobinding(sess):
+        try:
+            io_binding = sess.io_binding()
+            keep = []
+            for inp in sess.get_inputs():
+                if inp.name not in feeds:
+                    continue
+                arr = np.ascontiguousarray(feeds[inp.name])
+                ov = ort.OrtValue.ortvalue_from_numpy(arr, "cuda", 0)
+                io_binding.bind_ortvalue_input(inp.name, ov)
+                keep.append(ov)
+            for out in sess.get_outputs():
+                io_binding.bind_output(out.name, "cuda")
+            sess.run_with_iobinding(io_binding)
+            names = [o.name for o in sess.get_outputs()]
+            return {name: value.numpy() for name, value in zip(names, io_binding.get_outputs())}
+        except Exception as e:
+            log.warning("[tts] IOBinding failed, session.run fallback: %s", e)
+    names = [o.name for o in sess.get_outputs()]
+    return dict(zip(names, sess.run(None, feeds)))
+
+
 class _WaveformOrt:
     """BigVGAN (or any mel→wav) ONNX. Not Vocos mag/x/y."""
 
     def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
         ort, providers = _piper_ort_providers(hw_provider)
-        so = ort.SessionOptions()
-        so.intra_op_num_threads = max(1, int(num_threads))
+        so = _ort_lowmem_session_options(ort, num_threads)
+        self._ort = ort
         self._sess = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)
         self._in = self._sess.get_inputs()[0].name
+        log.info(
+            "[tts] waveform ORT %s iobind=%s providers=%s",
+            os.path.basename(onnx_path),
+            _use_ort_iobinding(self._sess),
+            self._sess.get_providers(),
+        )
 
     def infer(self, mel_bct):
         import numpy as np
 
-        wav = self._sess.run(None, {self._in: np.ascontiguousarray(mel_bct, dtype=np.float32)})[0]
+        mel = np.ascontiguousarray(mel_bct, dtype=np.float32)
+        wav = _ort_run(self._ort, self._sess, {self._in: mel})[self._sess.get_outputs()[0].name]
         wav = np.asarray(wav, dtype=np.float32).reshape(-1)
-        cap = int(mel_bct.shape[-1]) * 256
+        cap = int(mel.shape[-1]) * 256
         return wav[:cap]
 
 
@@ -1307,6 +1390,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         from utils.phonetone import PhoneToneFrontend, encode_for_matcha
 
         ensure_model(model_name, model_dir)
+        _dump_stage("before_frontend")
         self._frontend = PhoneToneFrontend(model_dir)
         self._encode = encode_for_matcha
         self._sid = speaker_id
@@ -1320,16 +1404,35 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
             raise FileNotFoundError(acoustic)
         if not os.path.isfile(vocoder):
             raise FileNotFoundError(vocoder)
+        _dump_stage("after_frontend")
+        self._hw_provider = hw_provider
+        self._num_threads = num_threads
+        self._acoustic_path = acoustic
+        self._vocoder_path = vocoder
+        self._serial = os.environ.get("TTS_GENTLEMAN_SERIAL_SESSION", "0") == "1"
         ort, providers = _piper_ort_providers(hw_provider)
-        so = ort.SessionOptions()
-        so.intra_op_num_threads = max(1, int(num_threads))
+        so = _ort_lowmem_session_options(ort, num_threads)
+        self._ort = ort
         self._sess = ort.InferenceSession(acoustic, sess_options=so, providers=providers)
-        self._vocoder = _WaveformOrt(vocoder, hw_provider, num_threads)
+        _dump_stage("after_matcha_session")
+        vocoder_hw = os.environ.get("TTS_VOCODER_HW", hw_provider).strip() or hw_provider
+        self._vocoder_hw = vocoder_hw
+        if self._serial:
+            self._vocoder = None
+            log.info("[tts] serial sessions ON: BigVGAN loads after Matcha infer")
+        else:
+            log.info("[tts] vocoder hw_provider=%s", vocoder_hw)
+            self._vocoder = _WaveformOrt(vocoder, vocoder_hw, num_threads)
         self._model_sr = 16000
+        _maybe_malloc_trim("after_gentleman_sessions")
+        _dump_stage("after_bigvgan_session")
         log.info(
-            "[tts] PhoneTone ORT loaded: model_dir=%s providers=%s frontend=%s",
+            "[tts] PhoneTone ORT loaded: model_dir=%s acoustic=%s providers=%s iobind=%s serial=%s frontend=%s",
             model_dir,
+            os.path.basename(acoustic),
             self._sess.get_providers(),
+            _use_ort_iobinding(self._sess),
+            self._serial,
             self._frontend.release,
         )
 
@@ -1344,22 +1447,42 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         return _split_text_for_tts(text, max_chars)
 
     def _synthesize_segment(self, text: str) -> bytes:
+        import gc
         import numpy as np
         from utils.matcha_trt import crop_mel
 
         packed = self._encode(text, temperature=self._noise_scale, length_scale=1.0 / max(self._speed, 1e-3))
+        _dump_stage("after_encode")
         feeds = {name: packed[name] for name in ("x", "x_lengths", "tones", "languages", "scales")}
         in_names = {i.name for i in self._sess.get_inputs()}
         if "x_length" in in_names and "x_lengths" not in in_names:
             feeds["x_length"] = feeds.pop("x_lengths")
-        outs = self._sess.run(None, feeds)
-        names = [o.name for o in self._sess.get_outputs()]
-        ac_out = dict(zip(names, outs))
+        ac_out = _ort_run(self._ort, self._sess, feeds)
+        _dump_stage("after_matcha_infer")
         mel = ac_out.get("mel")
         if mel is None:
-            raise RuntimeError("no mel in %s" % names)
+            raise RuntimeError("no mel in %s" % list(ac_out))
         cropped = crop_mel(mel, packed["real_len"])
-        samples = self._vocoder.infer(np.ascontiguousarray(cropped[None, ...], dtype=np.float32))
+        mel_bct = np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
+        if self._serial:
+            self._sess = None
+            gc.collect()
+            _maybe_malloc_trim("after_drop_matcha")
+            _dump_stage("after_drop_matcha")
+            vocoder = _WaveformOrt(self._vocoder_path, self._vocoder_hw, self._num_threads)
+            samples = vocoder.infer(mel_bct)
+            _dump_stage("after_vocoder_infer")
+            del vocoder
+            gc.collect()
+            so = _ort_lowmem_session_options(self._ort, self._num_threads)
+            _, providers = _piper_ort_providers(self._hw_provider)
+            self._sess = self._ort.InferenceSession(
+                self._acoustic_path, sess_options=so, providers=providers
+            )
+            _dump_stage("after_reload_matcha")
+        else:
+            samples = self._vocoder.infer(mel_bct)
+            _dump_stage("after_vocoder_infer")
         samples = _resample_to_16k(samples, self._model_sr)
         return _float_samples_to_pcm16(samples)
 
@@ -1388,7 +1511,7 @@ class MatchaTRTAdapter(TTSAdapter):
             resolve_acoustic_engine,
         )
         from utils.model_downloader import ensure_model
-        from utils.vocos_trt import VocosTRT, _Cudart
+        from utils.vocos_trt import VocosTRT, WaveformTRT, _Cudart
 
         ensure_model(model_name, model_dir)
         if not (model_name == "tts_matcha_gentleman" or os.path.isfile(os.path.join(model_dir, "bigvgan.onnx"))):
@@ -1405,6 +1528,8 @@ class MatchaTRTAdapter(TTSAdapter):
         self._noise_scale = float(noise_scale)
         self.max_segment_chars = MAX_SEGMENT_CHARS
         self.text_normalize = False
+        self._hw_provider = hw_provider
+        self._num_threads = num_threads
         from utils.phonetone import PhoneToneFrontend, is_phonetone_dir
 
         self._phonetone = is_phonetone_dir(model_dir) or model_name == "tts_matcha_gentleman"
@@ -1419,47 +1544,90 @@ class MatchaTRTAdapter(TTSAdapter):
         matcha_cache = os.environ.get("TTS_MATCHA_TRT_CACHE", "/opt/matcha_trt_cache")
         engine = resolve_acoustic_engine(matcha_cache)
         load_order = os.environ.get("TTS_TRT_LOAD_ORDER", "trt_first").strip()
+        self._engine_path = engine
+        self._vocoder_path = vocoder
+        self._vocos_cache = cache
+        self._load_order = load_order
         self._cudart = _Cudart()
         self._use_bigvgan = self._phonetone and os.path.basename(vocoder) == "bigvgan.onnx"
-        vocoder_rt = (
-            _WaveformOrt(vocoder, hw_provider, num_threads)
-            if self._use_bigvgan
-            else VocosTRT(vocoder, cache, cudart=self._cudart)
-        )
-        if load_order == "frontend_first":
+        self._acoustic = None
+        self._vocos = None
+        self._frontend = None
+        self._tok2id = {}
+        self._lex = {}
+
+        def _load_frontend():
             self._frontend = (
                 PhoneToneFrontend(model_dir)
                 if self._phonetone
                 else MatchaTextFrontend(wetext_dir or None)
             )
             self._tok2id = {} if self._phonetone else load_tokens(tokens_path)
-            self._lex = {} if self._phonetone else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
-            self._acoustic = AcousticTRT(engine, self._cudart)
-            self._vocos = vocoder_rt
+            self._lex = (
+                {}
+                if self._phonetone
+                else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
+            )
+            _dump_stage("after_frontend")
+
+        def _load_acoustic():
+            if self._acoustic is None:
+                self._acoustic = AcousticTRT(self._engine_path, self._cudart)
+                _dump_stage("after_matcha_engine")
+
+        def _load_vocoder():
+            if self._vocos is None:
+                if self._use_bigvgan:
+                    bigvgan_eng = os.environ.get("TTS_BIGVGAN_TRT_ENGINE", "").strip()
+                    if not bigvgan_eng:
+                        from pathlib import Path
+
+                        cache = Path(os.environ.get("TTS_BIGVGAN_TRT_CACHE", self._vocos_cache))
+                        found = sorted(cache.glob("bigvgan.trt8.5*.cmpf32.engine"))
+                        bigvgan_eng = str(found[-1]) if found else ""
+                    if bigvgan_eng:
+                        self._vocos = WaveformTRT(bigvgan_eng, cudart=self._cudart)
+                        _dump_stage("after_bigvgan_engine")
+                    else:
+                        self._vocos = _WaveformOrt(
+                            self._vocoder_path, self._hw_provider, self._num_threads
+                        )
+                        _dump_stage("after_bigvgan_session")
+                else:
+                    self._vocos = VocosTRT(
+                        self._vocoder_path, self._vocos_cache, cudart=self._cudart
+                    )
+                    _dump_stage("after_vocos_engine")
+
+        self._load_acoustic = _load_acoustic
+        self._load_vocoder = _load_vocoder
+        if load_order == "measure_gentleman":
+            # PhoneTone -> encode -> Matcha engine -> Matcha run -> BigVGAN -> vocoder run
+            _load_frontend()
+        elif load_order == "frontend_first":
+            _load_frontend()
+            _load_acoustic()
+            _load_vocoder()
         else:
-            self._acoustic = AcousticTRT(engine, self._cudart)
-            self._vocos = vocoder_rt
+            _load_acoustic()
+            _load_vocoder()
             import gc
 
             gc.collect()
-            self._frontend = (
-                PhoneToneFrontend(model_dir)
-                if self._phonetone
-                else MatchaTextFrontend(wetext_dir or None)
-            )
-            self._tok2id = {} if self._phonetone else load_tokens(tokens_path)
-            self._lex = {} if self._phonetone else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
+            _load_frontend()
         self._model_sr = 16000
         mem_after = _process_rss_mb()
         log.info(
             "[tts] Matcha TRT loaded: model_dir=%s engine=%s wetext=%s "
-            "speaker_id=%s speed=%s noise_scale=%s memory_mb=%.1f->%.1f",
+            "speaker_id=%s speed=%s noise_scale=%s load_order=%s "
+            "memory_mb=%.1f->%.1f",
             model_dir,
             engine,
-            self._frontend.has_wetext,
+            self._frontend.has_wetext if self._frontend is not None else None,
             speaker_id,
             speed,
             noise_scale,
+            load_order,
             mem_before,
             mem_after,
         )
@@ -1490,6 +1658,7 @@ class MatchaTRTAdapter(TTSAdapter):
                 "scales": enc["scales"],
             }
             real_len = int(enc["real_len"])
+            _dump_stage("after_encode")
         else:
             ids, phones, skipped, missing = text_to_ids(text, self._lex, self._tok2id)
             ids, real_len = pad_token_ids(ids, self._tok2id)
@@ -1508,14 +1677,18 @@ class MatchaTRTAdapter(TTSAdapter):
                 "x_length": np.asarray([real_len], np.int32),
                 "noise_scale": np.asarray([self._noise_scale], np.float32),
             }
+        self._load_acoustic()
         ac_out = self._acoustic.infer(feeds)
+        _dump_stage("after_matcha_infer")
         mel = ac_out.get("mel")
         if mel is None:
             raise RuntimeError("no mel in %s" % list(ac_out))
         cropped = crop_mel(mel, real_len)
+        self._load_vocoder()
         samples = self._vocos.infer(
             np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
         )
+        _dump_stage("after_vocoder_infer")
         samples = _resample_to_16k(samples, self._model_sr)
         return _float_samples_to_pcm16(samples)
 
@@ -1870,6 +2043,7 @@ def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
         for i, text in enumerate(texts):
             log.info(f"[tts] warmup [{i + 1}/{len(texts)}]")
             _warmup_tts_adapter(adapter, text)
+            _dump_stage("after_warmup_%d" % (i + 1))
         infer_ok = True
         _maybe_malloc_trim("after_warmup")
     except Exception as e:
@@ -1910,6 +2084,7 @@ class TTSPlugin:
         self._loading  = False
         self._load_error = None
         self._realtime_pacing = bool(plugin_cfg.get("realtime_pacing", False))
+        _dump_stage("ros_python")
         try:
             self._adapter  = _build_tts_adapter(plugin_cfg)
         except Exception as e:

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Canonical docker run for TTS leaderboard on Jetson (GPU required).
 #
-# Ranking: git clone this repo, models/WeText from the data disk (/models).
-# JP5 (L4T R35): default Matcha TRT cmpf32. JP6 (L4T R36): sherpa dual CUDA,
-# same as before — do not load JP5 engines.
+# Ranking: git clone this repo, models from the data disk (/models).
+# Gentleman PhoneTone: TTS_MATCHA_TRT=0, Matcha/BigVGAN Python ORT CUDA.
+# Do not require kai Vocos/Matcha TRT engines for this pack.
 #
 # judgeflow reference service should call this script (or equivalent flags)
 # instead of plain: docker run --privileged --network=host ...
@@ -47,17 +47,9 @@ if [[ -z "$VOCOS_CACHE_HOST" ]]; then
 fi
 mkdir -p "${MATCHA_CACHE_HOST}" "${VOCOS_CACHE_HOST}"
 
-# JP5 (L4T R35, TRT 8.5): ranking default is native Matcha TRT cmpf32.
-# JP6 (L4T R36): leave sherpa dual CUDA. Do not load JP5 engines.
-l4t_r36=0
-if [[ -f /etc/nv_tegra_release ]] && grep -q 'R36' /etc/nv_tegra_release; then
-  l4t_r36=1
-fi
-if [[ "$l4t_r36" == "1" ]]; then
-  TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-0}"
-else
-  TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-1}"
-fi
+# Gentleman ranking is PhoneTone ORT CUDA on JP5 and JP6.
+# kai Matcha+Vocos TRT is opt-in: TTS_MATCHA_TRT=1 plus host engines.
+TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-0}"
 ACOUSTIC_HOST="${TTS_MATCHA_TRT_ENGINE_HOST:-}"
 if [[ -z "$ACOUSTIC_HOST" ]]; then
   ACOUSTIC_HOST="$(ls -1t "${MATCHA_CACHE_HOST}"/model-steps-3.trt8.5*.cmpf32.engine 2>/dev/null | head -1 || true)"
@@ -102,7 +94,7 @@ RUN_ARGS=(
     -e TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     -e TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     -e TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"
-    -e TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-256}"
+    -e TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-512}"
     -e TTS_SHERPA_ORT_CONFIG="${TTS_SHERPA_ORT_CONFIG:-/deploy/ort_cuda_jp5.config}"
     -v "${VOCOS_CACHE_HOST}:/opt/vocos_trt_cache"
     -v "${MATCHA_CACHE_HOST}:/opt/matcha_trt_cache"
@@ -135,6 +127,17 @@ fi
 # Optional host model cache (if mounted on eval Jetson)
 if [ -d /models ]; then
     RUN_ARGS+=(-v /models:/models)
+fi
+
+ORT_WHEEL_HOST="${TTS_ORT_WHEEL_HOST:-}"
+if [[ -z "$ORT_WHEEL_HOST" ]]; then
+  ORT_WHEEL_HOST="$(ls -1t \
+    /models/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl \
+    /home/develop/fanyi/wheels/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl \
+    2>/dev/null | head -1 || true)"
+fi
+if [[ -n "${ORT_WHEEL_HOST}" && -f "${ORT_WHEEL_HOST}" ]]; then
+  RUN_ARGS+=(-v "${ORT_WHEEL_HOST}:/opt/wheels/$(basename "$ORT_WHEEL_HOST"):ro")
 fi
 
 # ROS_DOMAIN_ID / FASTDDS: set by judgeflow at docker run (not baked into image).

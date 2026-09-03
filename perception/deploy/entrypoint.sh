@@ -69,7 +69,7 @@ TRTPY
     export TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     export TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     export TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"
-    export TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-256}"
+    export TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-512}"
     export TTS_SHERPA_ORT_CONFIG="${TTS_SHERPA_ORT_CONFIG:-/deploy/ort_cuda_jp5.config}"
     log "ort mem: TRT=${TTS_ORT_USE_TRT} workspace=${TTS_ORT_CUDNN_MAX_WORKSPACE} arena=${TTS_ORT_ARENA_EXTEND} gpu_mem_limit_mb=${TTS_ORT_GPU_MEM_LIMIT_MB}"
 
@@ -94,6 +94,38 @@ ORTPY
             exit 125
         fi
         log "CUDA ok: ${cuda_ok}"
+    fi
+fi
+
+# Gentleman PhoneTone uses Python onnxruntime (CUDA EP). The image only
+# vendors sherpa's ORT .so, so install the JP5 cp38 GPU wheel when missing.
+if [ "${TTS_MATCHA_TRT}" != "1" ]; then
+    if python3 -c "import onnxruntime" >/dev/null 2>&1; then
+        log "python onnxruntime already present"
+    else
+        WHL=""
+        for cand in \
+            /opt/wheels/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl \
+            /models/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl
+        do
+            if [ -f "$cand" ]; then
+                WHL="$cand"
+                break
+            fi
+        done
+        if [ -z "$WHL" ]; then
+            WHL_URL="${TTS_ORT_WHEEL_URL:-http://172.28.4.81:34567/fanyi/phanthymotus_tts/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl}"
+            mkdir -p /tmp/wheels
+            WHL=/tmp/wheels/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl
+            log "downloading python onnxruntime wheel from ${WHL_URL}"
+            python3 - "$WHL_URL" "$WHL" <<'PY'
+import sys, urllib.request
+urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
+print("wheel_bytes", __import__("os").path.getsize(sys.argv[2]))
+PY
+        fi
+        log "pip install ${WHL}"
+        python3 -m pip install --no-cache-dir "${WHL}"
     fi
 fi
 

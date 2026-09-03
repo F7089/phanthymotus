@@ -56,7 +56,7 @@ class FstNormalizer:
         self.tagger, self.verbalizer = map(kaldifst.TextNormalizer, paths)
 
     def __call__(self, text: str) -> str:
-        from wetext import token_parser
+        from . import token_parser
 
         tagged = self.tagger(text)
         with self._lock:

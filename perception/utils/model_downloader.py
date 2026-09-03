@@ -60,7 +60,13 @@ MODELS = {
     },
     "tts_matcha_gentleman": {
         "url": f"{JUICEFS_BASE}/matcha-gentleman-phonetone-16k.tar.bz2",
-        "check_file": "bigvgan.onnx",
+        "check_file": "model-steps-3.onnx",
+    },
+    # JP5 Python 3.8 ORT GPU wheel. Image vendors sherpa's ORT .so only.
+    "tts_ort_gpu_cp38": {
+        "url": f"{JUICEFS_BASE}/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl",
+        "check_file": "onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl",
+        "single_file": True,
     },
     # WeText TN graphs (tagger+verbalizer). JuiceFS only — never git.
     "tts_wetext": {
