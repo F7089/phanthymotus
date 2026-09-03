@@ -101,15 +101,26 @@ ORTPY
 fi
 
 # Gentleman PhoneTone uses Python onnxruntime (CUDA EP). The image only
-# vendors sherpa's ORT .so, so install the JP5 cp38 GPU wheel when missing.
+# vendors sherpa's ORT .so, so install the matching GPU wheel when missing.
+# JP5 = cp38 (ORT 1.16.3), JP6 = cp310 (ORT 1.23.0).
 if [ "${TTS_MATCHA_TRT}" != "1" ]; then
     if python3 -c "import onnxruntime" >/dev/null 2>&1; then
         log "python onnxruntime already present"
     else
+        # Pick wheel name by Python version
+        PY_TAG=$(python3 -c "import sys; v=sys.version_info; print(f'cp{v.major}{v.minor}')")
+        case "${PY_TAG}" in
+            cp38)  ORT_WHL="onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl" ;;
+            cp310) ORT_WHL="onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl" ;;
+            *)     log "WARN: unknown Python tag ${PY_TAG}, defaulting to cp38 wheel"
+                   ORT_WHL="onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl" ;;
+        esac
+        log "python onnxruntime missing, will install ${ORT_WHL} (python=${PY_TAG})"
+
         WHL=""
         for cand in \
-            /opt/wheels/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl \
-            /models/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl
+            "/opt/wheels/${ORT_WHL}" \
+            "/models/${ORT_WHL}"
         do
             if [ -f "$cand" ]; then
                 WHL="$cand"
@@ -117,9 +128,9 @@ if [ "${TTS_MATCHA_TRT}" != "1" ]; then
             fi
         done
         if [ -z "$WHL" ]; then
-            WHL_URL="${TTS_ORT_WHEEL_URL:-http://172.28.4.81:34567/fanyi/phanthymotus_tts/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl}"
+            WHL_URL="${TTS_ORT_WHEEL_URL:-http://172.28.4.81:34567/fanyi/phanthymotus_tts/${ORT_WHL}}"
             mkdir -p /tmp/wheels
-            WHL=/tmp/wheels/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl
+            WHL="/tmp/wheels/${ORT_WHL}"
             log "downloading python onnxruntime wheel from ${WHL_URL}"
             python3 - "$WHL_URL" "$WHL" <<'PY'
 import sys, urllib.request
