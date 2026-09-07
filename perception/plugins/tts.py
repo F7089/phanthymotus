@@ -1486,7 +1486,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         self._num_threads = num_threads
         self._acoustic_path = acoustic
         self._vocoder_path = vocoder
-        self._serial = os.environ.get("TTS_GENTLEMAN_SERIAL_SESSION", "0") == "1"
+        self._serial = os.environ.get("TTS_GENTLEMAN_SERIAL_SESSION", "1") == "1"
         ort, providers = _piper_ort_providers(hw_provider)
         so = _ort_lowmem_session_options(ort, num_threads)
         self._ort = ort
