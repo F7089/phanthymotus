@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 CHUNK_BYTES = 3200  # 100ms @ 16kHz 16-bit mono
-MAX_SEGMENT_CHARS = 60
+MAX_SEGMENT_CHARS = 35
 # Local synthesis buffer. 600 frames is about 60 seconds / 1.9 MB of PCM.
 # It lets the producer synthesize the next sentence while the current one plays.
 SYNTH_QUEUE_FRAMES = 600
@@ -359,9 +359,29 @@ def _merge_letter_name_lexicon(lexicon: dict) -> dict:
     return out
 
 
-_STRONG_SENTENCE_END = frozenset("。！？!?；;")
-_WEAK_SENTENCE_END = frozenset("，,、：:")
+# Split priority (prosody first, memory second):
+#   。！？； / .!?  → always
+#   ，,            → only when the clause is already long
+#   、              → last-resort backstop, not a normal cut
+_STRONG_SENTENCE_END = frozenset("。！？；;!?")
+_COMMA_CHARS = frozenset("，,")
+_WEAK_SENTENCE_END = frozenset("、：:")
 _CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
+_PAUSE_MS = {
+    "，": 120,
+    ",": 120,
+    "、": 80,
+    "；": 200,
+    ";": 200,
+    "：": 150,
+    ":": 150,
+    "。": 280,
+    "！": 280,
+    "？": 280,
+    "!": 280,
+    "?": 280,
+    "．": 280,
+}
 
 _tn_normalizer = None  # legacy; normalization via utils.tts_text_frontend
 
@@ -446,8 +466,38 @@ def _is_cjk(char: str) -> bool:
     )
 
 
+def _is_single_letter_abbrev_dot(text: str, dot_index: int) -> bool:
+    """True for U.S. / e.g. style dots: a single letter immediately before '.'."""
+    if dot_index <= 0:
+        return False
+    prev = text[dot_index - 1]
+    if not (prev.isascii() and prev.isalpha()):
+        return False
+    if dot_index == 1:
+        return True
+    return not text[dot_index - 2].isalpha()
+
+
+def _find_cut(remaining: str, max_chars: int, marks: frozenset) -> int:
+    """Last mark in [max/2, max], else the next mark a bit past max. Else -1."""
+    if max_chars <= 0:
+        return -1
+    min_cut = max(1, max_chars // 2)
+    hard = min(len(remaining), max(max_chars, int(max_chars * 1.5)))
+    for index in range(min(max_chars, len(remaining)) - 1, min_cut - 1, -1):
+        if remaining[index] in marks:
+            return index + 1
+    for index in range(max_chars, hard):
+        if remaining[index] in marks:
+            return index + 1
+    return -1
+
+
 def _split_long_segment(segment: str, max_chars: int) -> list[str]:
-    """Split an unusually long sentence at weak punctuation or whitespace."""
+    """Only used when a strongly-split sentence is still over max_chars.
+
+    Commas first; whitespace next; 、/： only if nothing else works.
+    """
     if max_chars <= 0 or len(segment) <= max_chars:
         return [segment]
 
@@ -456,22 +506,20 @@ def _split_long_segment(segment: str, max_chars: int) -> list[str]:
     min_cut = max(1, max_chars // 2)
 
     while len(remaining) > max_chars:
-        cut = -1
+        cut = _find_cut(remaining, max_chars, _COMMA_CHARS)
 
-        # Prefer a comma/colon-like boundary near the maximum length.
-        for index in range(max_chars - 1, min_cut - 1, -1):
-            if remaining[index] in _WEAK_SENTENCE_END:
-                cut = index + 1
-                break
-
-        # For English text, prefer a whitespace boundary rather than
-        # splitting through the middle of a word.
         if cut < 0:
             space_index = remaining.rfind(" ", min_cut, max_chars + 1)
             if space_index >= 0:
                 cut = space_index + 1
 
         if cut < 0:
+            cut = _find_cut(remaining, max_chars, _WEAK_SENTENCE_END)
+
+        if cut < 0:
+            # Slightly over max is better than cutting through a word.
+            if len(remaining) <= int(max_chars * 1.5):
+                break
             cut = max_chars
 
         part = remaining[:cut].strip()
@@ -484,12 +532,46 @@ def _split_long_segment(segment: str, max_chars: int) -> list[str]:
     return parts
 
 
-def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[str]:
-    """Split text into TTS-friendly sentences while retaining punctuation.
+def _resolve_max_segment_chars(adapter=None) -> int:
+    env = os.environ.get("TTS_MAX_SEGMENT_CHARS", "").strip()
+    if env:
+        return max(1, int(env))
+    if adapter is not None:
+        return int(getattr(adapter, "max_segment_chars", MAX_SEGMENT_CHARS))
+    return MAX_SEGMENT_CHARS
 
-    Primary boundaries are Chinese/English sentence-ending punctuation and
-    newlines. English full stops are kept inside decimal numbers. A very long
-    sentence is split again at comma/colon-like punctuation or whitespace.
+
+def _ending_pause_ms(segment: str) -> int:
+    s = (segment or "").rstrip()
+    while s and s[-1] in _CLOSING_PUNCTUATION:
+        s = s[:-1]
+    if not s:
+        return 0
+    return int(_PAUSE_MS.get(s[-1], 80))
+
+
+def _silence_pcm16(ms: int) -> bytes:
+    if ms <= 0:
+        return b""
+    n = int(SAMPLE_RATE * int(ms) / 1000)
+    return b"\x00\x00" * max(0, n)
+
+
+def _split_utterance(adapter, text: str) -> list[str]:
+    text = (text or "").strip()
+    if not text:
+        return []
+    if os.environ.get("TTS_NO_SPLIT", "0") == "1":
+        return [text]
+    return _split_text_for_tts(text, _resolve_max_segment_chars(adapter))
+
+
+def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[str]:
+    """Split for TTS without chopping every comma.
+
+    Always cut at 。！？； / newline / English .!? (not 3.14 or U.S.).
+    A remaining clause longer than max_chars is cut at ，, then space,
+    and only then at、.
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not normalized:
@@ -509,9 +591,8 @@ def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[s
             previous = normalized[index - 1] if index > 0 else ""
             following = normalized[index + 1] if index + 1 < text_len else ""
             is_decimal = previous.isdigit() and following.isdigit()
-            # Avoid splitting 3.14, but support both "Hello. Next" and
-            # mixed text such as "Hello.下一句".
-            is_boundary = not is_decimal and (
+            is_abbrev = _is_single_letter_abbrev_dot(normalized, index)
+            is_boundary = (not is_decimal) and (not is_abbrev) and (
                 not following
                 or following.isspace()
                 or following in _CLOSING_PUNCTUATION
@@ -519,7 +600,6 @@ def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[s
             )
 
         if is_boundary:
-            # Keep closing quotes/brackets with the sentence-ending mark.
             next_index = index + 1
             while (
                 next_index < text_len
@@ -560,15 +640,7 @@ class TTSAdapter(ABC):
     def split_text(self, text: str) -> list[str]:
         if getattr(self, "text_normalize", True):
             text = _normalize_tts_text(text)
-        text = (text or "").strip()
-        if not text:
-            return []
-        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
-        # Short utterances: one ORT pass (sentence-splitting adds CUDA launch cost).
-        # Streaming / long text still splits when over max_chars.
-        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
-            return [text]
-        return _split_text_for_tts(text, max_chars)
+        return _split_utterance(self, text)
 
     def synthesize(self, text: str) -> bytes:
         """Synthesize all segments and return one concatenated PCM stream."""
@@ -579,13 +651,24 @@ class TTSAdapter(ABC):
         yield from self.synthesize_segments_stream(self.split_text(text))
 
     def synthesize_segments_stream(self, segments: list[str]):
-        """Synthesize pre-split segments and yield one continuous PCM stream."""
+        """Synthesize one clause at a time, insert a short pause, yield PCM.
+
+        Mel/wav tensors from a clause are dropped before the next ORT run so
+        BigVGAN peak tracks the longest clause, not the full paragraph.
+        """
+        import gc
+
         buffer = b""
+        spoken_parts = []
         for segment in segments:
             spoken = _strip_sentence_punct(segment)
-            if not spoken:
-                continue
+            if spoken:
+                spoken_parts.append((segment, spoken))
+        for i, (segment, spoken) in enumerate(spoken_parts):
             buffer += self._synthesize_segment(spoken)
+            if i + 1 < len(spoken_parts) and os.environ.get("TTS_SEGMENT_PAUSE", "1") != "0":
+                buffer += _silence_pcm16(_ending_pause_ms(segment))
+            gc.collect()
             while len(buffer) >= CHUNK_BYTES:
                 yield buffer[:CHUNK_BYTES]
                 buffer = buffer[CHUNK_BYTES:]
@@ -875,13 +958,7 @@ class SherpaOnnxTTSAdapter(TTSAdapter):
 
     def split_text(self, text: str) -> list[str]:
         text = self._frontend.normalize(text)
-        text = (text or "").strip()
-        if not text:
-            return []
-        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
-        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
-            return [text]
-        return _split_text_for_tts(text, max_chars)
+        return _split_utterance(self, text)
 
     def _synthesize_segment(self, text: str) -> bytes:
         audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
@@ -1424,7 +1501,12 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
             log.info("[tts] vocoder hw_provider=%s", vocoder_hw)
             self._vocoder = _WaveformOrt(vocoder, vocoder_hw, num_threads)
         self._model_sr = 16000
+        self._model_dir = model_dir
         _maybe_malloc_trim("after_gentleman_sessions")
+        # Weights are in the ORT sessions. Do not keep onnx/frontend page cache.
+        from utils.model_downloader import drop_file_pages
+
+        drop_file_pages(model_dir)
         _dump_stage("after_bigvgan_session")
         log.info(
             "[tts] PhoneTone ORT loaded: model_dir=%s acoustic=%s providers=%s iobind=%s serial=%s frontend=%s",
@@ -1438,13 +1520,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
 
     def split_text(self, text: str) -> list[str]:
         text = self._frontend.normalize(text)
-        text = (text or "").strip()
-        if not text:
-            return []
-        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
-        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
-            return [text]
-        return _split_text_for_tts(text, max_chars)
+        return _split_utterance(self, text)
 
     def _synthesize_segment(self, text: str) -> bytes:
         import gc
@@ -1462,7 +1538,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         mel = ac_out.get("mel")
         if mel is None:
             raise RuntimeError("no mel in %s" % list(ac_out))
-        cropped = crop_mel(mel, packed["real_len"])
+        cropped = crop_mel(mel, packed["real_len"], ac_out.get("mel_lengths"))
         mel_bct = np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
         if self._serial:
             self._sess = None
@@ -1483,8 +1559,16 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         else:
             samples = self._vocoder.infer(mel_bct)
             _dump_stage("after_vocoder_infer")
+        print(
+            "SEG_MEL chars=%d T=%s samples_hint=%s"
+            % (len(text), int(np.asarray(cropped).shape[-1]), int(np.asarray(cropped).shape[-1]) * 256),
+            flush=True,
+        )
         samples = _resample_to_16k(samples, self._model_sr)
-        return _float_samples_to_pcm16(samples)
+        pcm = _float_samples_to_pcm16(samples)
+        del packed, feeds, ac_out, mel, cropped, mel_bct, samples
+        gc.collect()
+        return pcm
 
 
 class MatchaTRTAdapter(TTSAdapter):
@@ -1634,13 +1718,7 @@ class MatchaTRTAdapter(TTSAdapter):
 
     def split_text(self, text: str) -> list[str]:
         text = self._frontend.normalize(text)
-        text = (text or "").strip()
-        if not text:
-            return []
-        max_chars = getattr(self, "max_segment_chars", MAX_SEGMENT_CHARS)
-        if getattr(self, "prefer_single_pass", True) and len(text) <= max_chars:
-            return [text]
-        return _split_text_for_tts(text, max_chars)
+        return _split_utterance(self, text)
 
     def _synthesize_segment(self, text: str) -> bytes:
         import numpy as np
@@ -1683,7 +1761,7 @@ class MatchaTRTAdapter(TTSAdapter):
         mel = ac_out.get("mel")
         if mel is None:
             raise RuntimeError("no mel in %s" % list(ac_out))
-        cropped = crop_mel(mel, real_len)
+        cropped = crop_mel(mel, real_len, ac_out.get("mel_lengths"))
         self._load_vocoder()
         samples = self._vocos.infer(
             np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
@@ -2046,6 +2124,15 @@ def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
             _dump_stage("after_warmup_%d" % (i + 1))
         infer_ok = True
         _maybe_malloc_trim("after_warmup")
+        from utils.model_downloader import drop_file_pages
+
+        for path in (
+            getattr(adapter, "_model_dir", None),
+            getattr(adapter, "_acoustic_path", None),
+            getattr(adapter, "_vocoder_path", None),
+        ):
+            if path:
+                drop_file_pages(path)
     except Exception as e:
         log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
         if os.environ.get("TTS_MATCHA_TRT", "0") == "1":

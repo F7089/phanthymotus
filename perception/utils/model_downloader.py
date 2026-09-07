@@ -61,6 +61,8 @@ MODELS = {
     "tts_matcha_gentleman": {
         "url": f"{JUICEFS_BASE}/matcha-gentleman-phonetone-16k.tar.bz2",
         "check_file": "model-steps-3.onnx",
+        # Ranking uses 3-step. Do not extract the 10-step graph into page cache.
+        "skip_files": ("model-steps-10.onnx",),
     },
     # JP5 Python 3.8 ORT GPU wheel. Image vendors sherpa's ORT .so only.
     "tts_ort_gpu_cp38": {
@@ -165,6 +167,58 @@ MODELS = {
 }
 
 
+def drop_file_pages(path: str, *, log_result: bool = True) -> int:
+    """Evict file pages from the page cache (POSIX_FADV_DONTNEED).
+
+    Ranking cgroup max_usage includes cache. Freshly written files are dirty;
+    fsync first or DONTNEED is a no-op on Linux. After ORT copies weights,
+    on-disk onnx/tar/wheel do not need to stay resident.
+    """
+    if not path or not os.path.exists(path):
+        return 0
+    files: list[str] = []
+    if os.path.isfile(path):
+        files = [path]
+    else:
+        for root, _, names in os.walk(path):
+            for name in names:
+                files.append(os.path.join(root, name))
+    n = 0
+    for file_path in files:
+        fd = -1
+        try:
+            try:
+                fd = os.open(file_path, os.O_RDWR)
+            except OSError:
+                fd = os.open(file_path, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            except OSError:
+                pass
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+            n += 1
+        except OSError:
+            continue
+        finally:
+            if fd >= 0:
+                os.close(fd)
+    if n and log_result:
+        log.info("[model_downloader] dropped page cache for %s files under %s", n, path)
+    return n
+
+
+def _unlink_skipped(model_dir: str, skip_files) -> None:
+    for name in skip_files or ():
+        victim = os.path.join(model_dir, name)
+        if os.path.isfile(victim):
+            try:
+                drop_file_pages(victim)
+                os.unlink(victim)
+                log.info("[model_downloader] removed unused %s", victim)
+            except OSError as e:
+                log.warning("[model_downloader] could not remove %s: %s", victim, e)
+
+
 def _local_juicefs_src(url: str) -> str | None:
     name = os.path.basename(url.split("?", 1)[0])
     path = os.path.join(JUICEFS_LOCAL, name)
@@ -178,8 +232,11 @@ def ensure_model(name: str, model_dir: str) -> None:
         raise ValueError(f"Unknown model name: {name}")
 
     check_path = os.path.join(model_dir, info["check_file"])
+    skip_files = info.get("skip_files") or ()
     if os.path.exists(check_path):
         log.info(f"[model_downloader] {name}: already exists at {model_dir}")
+        _unlink_skipped(model_dir, skip_files)
+        drop_file_pages(model_dir)
         return
 
     url = info["url"]
@@ -201,9 +258,11 @@ def ensure_model(name: str, model_dir: str) -> None:
     if local:
         log.info(f"[model_downloader] {name}: extract from data disk {local}")
         if suffix == ".zip":
-            _extract_zip(local, model_dir)
+            _extract_zip(local, model_dir, skip_files)
         else:
-            _extract_tar(local, model_dir)
+            _extract_tar(local, model_dir, skip_files)
+        _unlink_skipped(model_dir, skip_files)
+        drop_file_pages(model_dir)
         log.info(f"[model_downloader] {name}: done.")
         if not os.path.exists(check_path):
             raise RuntimeError(
@@ -220,13 +279,17 @@ def ensure_model(name: str, model_dir: str) -> None:
         urlretrieve(url, tmp_path, reporthook=_progress_hook(name))
         log.info(f"[model_downloader] {name}: extracting to {model_dir} ...")
         if suffix == ".zip":
-            _extract_zip(tmp_path, model_dir)
+            _extract_zip(tmp_path, model_dir, skip_files)
         else:
-            _extract_tar(tmp_path, model_dir)
+            _extract_tar(tmp_path, model_dir, skip_files)
+        drop_file_pages(tmp_path)
         log.info(f"[model_downloader] {name}: done.")
     finally:
         if os.path.exists(tmp_path):
+            drop_file_pages(tmp_path)
             os.unlink(tmp_path)
+    _unlink_skipped(model_dir, skip_files)
+    drop_file_pages(model_dir)
 
     if not os.path.exists(check_path):
         raise RuntimeError(
@@ -235,8 +298,9 @@ def ensure_model(name: str, model_dir: str) -> None:
         )
 
 
-def _extract_zip(zip_path: str, model_dir: str) -> None:
+def _extract_zip(zip_path: str, model_dir: str, skip_files=()) -> None:
     """Extract zip, stripping common top-level directory prefix."""
+    skip = set(skip_files or ())
     with zipfile.ZipFile(zip_path, 'r') as zf:
         names = [n for n in zf.namelist()
                  if not n.endswith('/') and not n.startswith('__MACOSX')]
@@ -248,14 +312,20 @@ def _extract_zip(zip_path: str, model_dir: str) -> None:
             stripped = name[len(prefix):] if prefix else name
             if not stripped:
                 continue
+            if os.path.basename(stripped) in skip:
+                continue
             dest = os.path.join(model_dir, stripped)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with zf.open(name) as src, open(dest, 'wb') as dst:
                 dst.write(src.read())
+                dst.flush()
+                os.fsync(dst.fileno())
+            drop_file_pages(dest, log_result=False)
 
 
-def _extract_tar(tar_path: str, model_dir: str) -> None:
+def _extract_tar(tar_path: str, model_dir: str, skip_files=()) -> None:
     """Extract tar.bz2, stripping common top-level directory prefix."""
+    skip = set(skip_files or ())
     with tarfile.open(tar_path, "r:bz2") as tf:
         members = tf.getmembers()
         if not members:
@@ -271,7 +341,10 @@ def _extract_tar(tar_path: str, model_dir: str) -> None:
             if not m.name:
                 continue
             m.name = m.name.lstrip("/")
+            if os.path.basename(m.name) in skip:
+                continue
             tf.extract(m, model_dir)
+            drop_file_pages(os.path.join(model_dir, m.name), log_result=False)
 
 
 def _common_prefix_from_names(names: list[str]) -> str:

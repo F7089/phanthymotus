@@ -30,7 +30,7 @@ plugins:
     speed: 1.0
     text_normalize: false
     wetext_dir: ""
-    max_segment_chars: 80
+    max_segment_chars: 35
     prefer_single_pass: true
     warmup: true
     warmup_async: false

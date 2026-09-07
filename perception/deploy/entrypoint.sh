@@ -140,6 +140,25 @@ PY
         fi
         log "pip install ${WHL}"
         python3 -m pip install --no-cache-dir "${WHL}"
+        python3 -c '
+import os, sys
+p = sys.argv[1]
+if os.path.isfile(p):
+    try:
+        fd = os.open(p, os.O_RDWR)
+    except OSError:
+        fd = os.open(p, os.O_RDONLY)
+    try:
+        try:
+            os.fsync(fd)
+        except OSError:
+            pass
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+    finally:
+        os.close(fd)
+' "${WHL}"
+        rm -rf /tmp/wheels
+        log "dropped wheel page cache and removed /tmp/wheels"
     fi
 fi
 
