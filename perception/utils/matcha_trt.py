@@ -329,19 +329,17 @@ def pad_token_ids(ids, tok2id):
     return ids, real_len
 
 
-def crop_mel(mel, n_tokens: int):
+def crop_mel(mel, n_tokens: int, mel_lengths=None):
+    """Crop padded frames. Prefer model mel_lengths; keep 2-arg callers working."""
     m = np.asarray(mel, dtype=np.float32)
     if m.ndim == 3:
         m = m[0]
-    e = (m.astype(np.float64) ** 2).mean(axis=0)
-    mx = float(e.max()) if e.size else 0.0
-    if mx > 0:
-        hits = np.where(e > mx * 0.02)[0]
-        if hits.size:
-            end = min(m.shape[1], int(hits[-1]) + 8)
-            start = max(0, int(hits[0]))
-            m = m[:, start:end]
-    cap = max(80, min(MAX_MEL, int(n_tokens) * 24))
-    if m.shape[1] > cap:
-        m = m[:, :cap]
-    return m
+    caps = [int(m.shape[1])]
+    if mel_lengths is not None:
+        ml = int(np.asarray(mel_lengths).reshape(-1)[0])
+        if ml > 0:
+            caps.append(ml)
+    if n_tokens:
+        caps.append(max(1, min(MAX_MEL, int(n_tokens) * 24)))
+    end = max(1, min(caps))
+    return m[:, :end]
