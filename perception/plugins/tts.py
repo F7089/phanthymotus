@@ -121,7 +121,7 @@ def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) 
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
 
     JP5 memory defaults: CUDA EP only, cuDNN workspace off, kSameAsRequested,
-    256MB arena cap per session. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
+    512MB Matcha / 128MB BigVGAN arena cap. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
 
     Memory-oriented knobs (env):
       TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 0; 1 can add multiple GB)
@@ -161,7 +161,7 @@ def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) 
         if gpu_mem_limit_mb is not None and int(gpu_mem_limit_mb) > 0:
             mem_mb = str(int(gpu_mem_limit_mb))
         else:
-            mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "256").strip()
+            mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "512").strip()
         if mem_mb.isdigit() and int(mem_mb) > 0:
             cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
 
