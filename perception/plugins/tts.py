@@ -115,18 +115,19 @@ def _sherpa_provider(hw_provider: str) -> str:
     return "cuda"
 
 
-def _piper_ort_providers(hw_provider: str) -> tuple:
+def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) -> tuple:
     """Return (onnxruntime module, provider list) for Piper/Melo InferenceSession.
 
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
 
     JP5 memory defaults: CUDA EP only, cuDNN workspace off, kSameAsRequested,
-    512MB arena cap. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
+    256MB arena cap per session. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
 
     Memory-oriented knobs (env):
       TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 0; 1 can add multiple GB)
       TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo
-      TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (soft CUDA EP arena cap only)
+      TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (CUDA EP arena cap per session)
+      TTS_VOCODER_GPU_MEM_LIMIT_MB=<int> (BigVGAN session; default 128)
       TTS_ORT_CUDNN_ALGO=HEURISTIC|DEFAULT|EXHAUSTIVE
       TTS_ORT_USE_TRT=1                 (TensorRT EP ahead of CUDA; off by default)
       TTS_ORT_TRT_WORKSPACE_MB=<int>    (default 512)
@@ -156,7 +157,10 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
         arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "kSameAsRequested").strip()
         if arena in ("kSameAsRequested", "kNextPowerOfTwo"):
             cuda_opts["arena_extend_strategy"] = arena
-        mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "512").strip()
+        if gpu_mem_limit_mb is not None and int(gpu_mem_limit_mb) > 0:
+            mem_mb = str(int(gpu_mem_limit_mb))
+        else:
+            mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "256").strip()
         if mem_mb.isdigit() and int(mem_mb) > 0:
             cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
 
@@ -295,7 +299,9 @@ class _WaveformOrt:
     """BigVGAN (or any mel→wav) ONNX. Not Vocos mag/x/y."""
 
     def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
-        ort, providers = _piper_ort_providers(hw_provider)
+        voc_mb = os.environ.get("TTS_VOCODER_GPU_MEM_LIMIT_MB", "128").strip()
+        gpu_mb = int(voc_mb) if voc_mb.isdigit() and int(voc_mb) > 0 else 128
+        ort, providers = _piper_ort_providers(hw_provider, gpu_mem_limit_mb=gpu_mb)
         so = _ort_lowmem_session_options(ort, num_threads)
         self._ort = ort
         self._sess = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)

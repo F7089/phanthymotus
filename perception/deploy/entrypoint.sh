@@ -72,10 +72,11 @@ TRTPY
     export TTS_ORT_USE_TRT="${TTS_ORT_USE_TRT:-0}"
     export TTS_ORT_CUDNN_MAX_WORKSPACE="${TTS_ORT_CUDNN_MAX_WORKSPACE:-0}"
     export TTS_ORT_ARENA_EXTEND="${TTS_ORT_ARENA_EXTEND:-kSameAsRequested}"
-    export TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-512}"
+    export TTS_ORT_GPU_MEM_LIMIT_MB="${TTS_ORT_GPU_MEM_LIMIT_MB:-256}"
+    export TTS_VOCODER_GPU_MEM_LIMIT_MB="${TTS_VOCODER_GPU_MEM_LIMIT_MB:-128}"
     export TTS_GENTLEMAN_SERIAL_SESSION="${TTS_GENTLEMAN_SERIAL_SESSION:-0}"
     export TTS_SHERPA_ORT_CONFIG="${TTS_SHERPA_ORT_CONFIG:-/deploy/ort_cuda_jp5.config}"
-    log "ort mem: TRT=${TTS_ORT_USE_TRT} workspace=${TTS_ORT_CUDNN_MAX_WORKSPACE} arena=${TTS_ORT_ARENA_EXTEND} gpu_mem_limit_mb=${TTS_ORT_GPU_MEM_LIMIT_MB}"
+    log "ort mem: TRT=${TTS_ORT_USE_TRT} workspace=${TTS_ORT_CUDNN_MAX_WORKSPACE} arena=${TTS_ORT_ARENA_EXTEND} gpu_mem_limit_mb=${TTS_ORT_GPU_MEM_LIMIT_MB} vocoder_gpu_mem_limit_mb=${TTS_VOCODER_GPU_MEM_LIMIT_MB}"
 
     if [ "${TTS_REQUIRE_CUDA:-1}" = "1" ]; then
         log "checking CUDA via sherpa-onnx..."
