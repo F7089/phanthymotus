@@ -121,7 +121,7 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
     Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
 
     JP5 memory defaults: CUDA EP only, cuDNN workspace off, kSameAsRequested,
-    256MB arena cap. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
+    512MB arena cap. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
 
     Memory-oriented knobs (env):
       TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 0; 1 can add multiple GB)
@@ -156,7 +156,7 @@ def _piper_ort_providers(hw_provider: str) -> tuple:
         arena = os.environ.get("TTS_ORT_ARENA_EXTEND", "kSameAsRequested").strip()
         if arena in ("kSameAsRequested", "kNextPowerOfTwo"):
             cuda_opts["arena_extend_strategy"] = arena
-        mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "256").strip()
+        mem_mb = os.environ.get("TTS_ORT_GPU_MEM_LIMIT_MB", "512").strip()
         if mem_mb.isdigit() and int(mem_mb) > 0:
             cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
 
@@ -1486,7 +1486,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         self._num_threads = num_threads
         self._acoustic_path = acoustic
         self._vocoder_path = vocoder
-        self._serial = os.environ.get("TTS_GENTLEMAN_SERIAL_SESSION", "1") == "1"
+        self._serial = os.environ.get("TTS_GENTLEMAN_SERIAL_SESSION", "0") == "1"
         ort, providers = _piper_ort_providers(hw_provider)
         so = _ort_lowmem_session_options(ort, num_threads)
         self._ort = ort
