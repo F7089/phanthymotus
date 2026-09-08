@@ -7,6 +7,8 @@ Backend selected via config (vits / kokoro / matcha).
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -128,6 +130,8 @@ def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) 
       TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo
       TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (CUDA EP arena cap per session)
       TTS_VOCODER_GPU_MEM_LIMIT_MB=<int> (BigVGAN session; default 128)
+      TTS_ORT_IOBINDING=0|1             (default 0; CUDA OrtValue bypasses arena cap)
+      TTS_GPU_LOCK=0|1                  (default 1; one GPU segment across containers)
       TTS_ORT_CUDNN_ALGO=HEURISTIC|DEFAULT|EXHAUSTIVE
       TTS_ORT_USE_TRT=1                 (TensorRT EP ahead of CUDA; off by default)
       TTS_ORT_TRT_WORKSPACE_MB=<int>    (default 512)
@@ -263,10 +267,66 @@ def _phonetone_vocoder_path(model_dir: str) -> str:
 def _use_ort_iobinding(sess) -> bool:
     import os
 
+    # Default off: OrtValue CUDA buffers sit outside gpu_mem_limit, so the
+    # arena cap cannot stop process growth. 1f81c7a sherpa used session.run.
     return (
-        os.environ.get("TTS_ORT_IOBINDING", "1") == "1"
+        os.environ.get("TTS_ORT_IOBINDING", "0") == "1"
         and "CUDAExecutionProvider" in sess.get_providers()
     )
+
+
+@contextlib.contextmanager
+def _tts_gpu_lock():
+    """One Matcha+BigVGAN segment at a time across ranking TTS containers.
+
+    1f81c7a had no lock: sherpa Matcha+Vocos finished first audio under 3-way
+    GPU contention. Gentleman BigVGAN does not. Ranking uses --ipc=host and
+    often bind-mounts /models; flock on a shared path gives the same "GPU is
+    not wedged by three sess.run" outcome without unloading sessions.
+    """
+    if os.environ.get("TTS_GPU_LOCK", "1") != "1":
+        yield
+        return
+    env_path = os.environ.get("TTS_GPU_LOCK_PATH", "").strip()
+    candidates = []
+    if env_path:
+        candidates.append(env_path)
+    if os.path.isdir("/models"):
+        candidates.append("/models/.phanthymotus_tts_gpu.lock")
+    candidates.append("/dev/shm/phanthymotus_tts_gpu.lock")
+    candidates.append("/tmp/phanthymotus_tts_gpu.lock")
+    fd = None
+    used = None
+    err = None
+    for path in candidates:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o666)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            used = path
+            break
+        except OSError as exc:
+            err = exc
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                fd = None
+    if fd is None:
+        log.warning("[tts] gpu lock unavailable (%s); concurrent ORT may stall", err)
+        yield
+        return
+    try:
+        if not getattr(_tts_gpu_lock, "_logged", False):
+            log.info("[tts] gpu lock %s", used)
+            _tts_gpu_lock._logged = True
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
 
 
 def _ort_run(ort, sess, feeds: dict) -> dict:
@@ -1539,32 +1599,33 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         in_names = {i.name for i in self._sess.get_inputs()}
         if "x_length" in in_names and "x_lengths" not in in_names:
             feeds["x_length"] = feeds.pop("x_lengths")
-        ac_out = _ort_run(self._ort, self._sess, feeds)
-        _dump_stage("after_matcha_infer")
-        mel = ac_out.get("mel")
-        if mel is None:
-            raise RuntimeError("no mel in %s" % list(ac_out))
-        cropped = crop_mel(mel, packed["real_len"], ac_out.get("mel_lengths"))
-        mel_bct = np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
-        if self._serial:
-            self._sess = None
-            gc.collect()
-            _maybe_malloc_trim("after_drop_matcha")
-            _dump_stage("after_drop_matcha")
-            vocoder = _WaveformOrt(self._vocoder_path, self._vocoder_hw, self._num_threads)
-            samples = vocoder.infer(mel_bct)
-            _dump_stage("after_vocoder_infer")
-            del vocoder
-            gc.collect()
-            so = _ort_lowmem_session_options(self._ort, self._num_threads)
-            _, providers = _piper_ort_providers(self._hw_provider)
-            self._sess = self._ort.InferenceSession(
-                self._acoustic_path, sess_options=so, providers=providers
-            )
-            _dump_stage("after_reload_matcha")
-        else:
-            samples = self._vocoder.infer(mel_bct)
-            _dump_stage("after_vocoder_infer")
+        with _tts_gpu_lock():
+            ac_out = _ort_run(self._ort, self._sess, feeds)
+            _dump_stage("after_matcha_infer")
+            mel = ac_out.get("mel")
+            if mel is None:
+                raise RuntimeError("no mel in %s" % list(ac_out))
+            cropped = crop_mel(mel, packed["real_len"], ac_out.get("mel_lengths"))
+            mel_bct = np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
+            if self._serial:
+                self._sess = None
+                gc.collect()
+                _maybe_malloc_trim("after_drop_matcha")
+                _dump_stage("after_drop_matcha")
+                vocoder = _WaveformOrt(self._vocoder_path, self._vocoder_hw, self._num_threads)
+                samples = vocoder.infer(mel_bct)
+                _dump_stage("after_vocoder_infer")
+                del vocoder
+                gc.collect()
+                so = _ort_lowmem_session_options(self._ort, self._num_threads)
+                _, providers = _piper_ort_providers(self._hw_provider)
+                self._sess = self._ort.InferenceSession(
+                    self._acoustic_path, sess_options=so, providers=providers
+                )
+                _dump_stage("after_reload_matcha")
+            else:
+                samples = self._vocoder.infer(mel_bct)
+                _dump_stage("after_vocoder_infer")
         print(
             "SEG_MEL chars=%d T=%s samples_hint=%s"
             % (len(text), int(np.asarray(cropped).shape[-1]), int(np.asarray(cropped).shape[-1]) * 256),
@@ -1891,6 +1952,11 @@ class _TTSNode(Node):
             return self._status_dict()
         if not self._adapter:
             raise RuntimeError("TTS adapter not configured")
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._stop_event.set()
+            self._worker_thread.join(timeout=15)
+            if self._worker_thread.is_alive():
+                log.warning("[tts] previous worker still alive; new start may overlap")
         self._stop_event.clear()
         self._worker_thread = threading.Thread(target=self._worker, daemon=True)
         self._worker_thread.start()
@@ -1900,7 +1966,7 @@ class _TTSNode(Node):
     def stop(self) -> dict:
         self._stop_event.set()
         if self._worker_thread and self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=3)
+            self._worker_thread.join(timeout=15)
         self.state = "idle"
         return {"state": "idle"}
 
@@ -2060,7 +2126,7 @@ class _TTSNode(Node):
                     self._pub.publish(msg)
                     frames_sent += 1
 
-                producer_thread.join(timeout=0.2)
+                producer_thread.join(timeout=15 if self._stop_event.is_set() else 0.2)
                 if producer_error:
                     raise producer_error[0]
 
