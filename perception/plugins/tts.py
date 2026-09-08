@@ -234,15 +234,41 @@ def _ort_lowmem_session_options(ort, num_threads: int):
     return so
 
 
-def _dump_stage(tag: str) -> None:
-    if os.environ.get("TTS_DUMP_CGROUP", "0") != "1":
-        return
-    try:
-        from utils.matcha_trt import dump_fullstack_peak
+def _load_onnx_session(onnx_path: str, hw_provider: str, num_threads: int):
+    """Plain CUDA (or CPU) InferenceSession. No arena cap, no IOBinding."""
+    import os
 
-        dump_fullstack_peak(tag)
-    except Exception as e:
-        log.warning("[tts] stage dump %s failed: %s", tag, e)
+    import onnxruntime as ort
+
+    so = ort.SessionOptions()
+    so.intra_op_num_threads = max(1, int(num_threads))
+    so.inter_op_num_threads = 1
+    hw = (hw_provider or "cpu").lower().strip()
+    if hw == "cuda":
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" not in available:
+            raise RuntimeError(
+                "CUDAExecutionProvider missing; available=%s" % available
+            )
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    else:
+        providers = ["CPUExecutionProvider"]
+    sess = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)
+    log.info(
+        "[tts] onnx %s providers=%s",
+        os.path.basename(onnx_path),
+        sess.get_providers(),
+    )
+    return ort, sess
+
+
+def _ort_outputs(sess, feeds: dict) -> dict:
+    names = [o.name for o in sess.get_outputs()]
+    return dict(zip(names, sess.run(None, feeds)))
+
+
+def _dump_stage(tag: str) -> None:
+    return
 
 
 def _phonetone_acoustic_path(model_dir: str) -> str:
@@ -261,66 +287,18 @@ def _phonetone_vocoder_path(model_dir: str) -> str:
     return os.path.join(model_dir, "bigvgan.onnx")
 
 
-def _use_ort_iobinding(sess) -> bool:
-    import os
-
-    # Default off. CUDA OrtValue + run_with_iobinding skipped stream sync and
-    # sat outside gpu_mem_limit; 3-way ranking can stall. Use sess.run.
-    return (
-        os.environ.get("TTS_ORT_IOBINDING", "0") == "1"
-        and "CUDAExecutionProvider" in sess.get_providers()
-    )
-
-
-def _ort_run(ort, sess, feeds: dict) -> dict:
-    """Run ORT. CUDA IOBinding keeps tensors on GPU until .numpy()."""
-    import numpy as np
-
-    if _use_ort_iobinding(sess):
-        try:
-            io_binding = sess.io_binding()
-            keep = []
-            for inp in sess.get_inputs():
-                if inp.name not in feeds:
-                    continue
-                arr = np.ascontiguousarray(feeds[inp.name])
-                ov = ort.OrtValue.ortvalue_from_numpy(arr, "cuda", 0)
-                io_binding.bind_ortvalue_input(inp.name, ov)
-                keep.append(ov)
-            for out in sess.get_outputs():
-                io_binding.bind_output(out.name, "cuda")
-            sess.run_with_iobinding(io_binding)
-            names = [o.name for o in sess.get_outputs()]
-            return {name: value.numpy() for name, value in zip(names, io_binding.get_outputs())}
-        except Exception as e:
-            log.warning("[tts] IOBinding failed, session.run fallback: %s", e)
-    names = [o.name for o in sess.get_outputs()]
-    return dict(zip(names, sess.run(None, feeds)))
-
-
 class _WaveformOrt:
-    """BigVGAN (or any mel→wav) ONNX. Not Vocos mag/x/y."""
+    """BigVGAN (or any mel→wav) ONNX."""
 
     def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
-        voc_mb = os.environ.get("TTS_VOCODER_GPU_MEM_LIMIT_MB", "128").strip()
-        gpu_mb = int(voc_mb) if voc_mb.isdigit() and int(voc_mb) > 0 else 128
-        ort, providers = _piper_ort_providers(hw_provider, gpu_mem_limit_mb=gpu_mb)
-        so = _ort_lowmem_session_options(ort, num_threads)
-        self._ort = ort
-        self._sess = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)
+        _ort, self._sess = _load_onnx_session(onnx_path, hw_provider, num_threads)
         self._in = self._sess.get_inputs()[0].name
-        log.info(
-            "[tts] waveform ORT %s iobind=%s providers=%s",
-            os.path.basename(onnx_path),
-            _use_ort_iobinding(self._sess),
-            self._sess.get_providers(),
-        )
 
     def infer(self, mel_bct):
         import numpy as np
 
         mel = np.ascontiguousarray(mel_bct, dtype=np.float32)
-        wav = _ort_run(self._ort, self._sess, {self._in: mel})[self._sess.get_outputs()[0].name]
+        wav = _ort_outputs(self._sess, {self._in: mel})[self._sess.get_outputs()[0].name]
         wav = np.asarray(wav, dtype=np.float32).reshape(-1)
         cap = int(mel.shape[-1]) * 256
         return wav[:cap]
@@ -1457,7 +1435,7 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
 
 
 class MatchaPhoneToneOrtAdapter(TTSAdapter):
-    """Gentleman PhoneTone frontend + Matcha/BigVGAN ORT CUDA. Not sherpa Matcha."""
+    """PhoneTone frontend + Matcha ONNX + BigVGAN ONNX."""
 
     def __init__(
         self,
@@ -1476,7 +1454,6 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         from utils.phonetone import PhoneToneFrontend, encode_for_matcha
 
         ensure_model(model_name, model_dir)
-        _dump_stage("before_frontend")
         self._frontend = PhoneToneFrontend(model_dir)
         self._encode = encode_for_matcha
         self._sid = speaker_id
@@ -1490,40 +1467,14 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
             raise FileNotFoundError(acoustic)
         if not os.path.isfile(vocoder):
             raise FileNotFoundError(vocoder)
-        _dump_stage("after_frontend")
-        self._hw_provider = hw_provider
-        self._num_threads = num_threads
-        self._acoustic_path = acoustic
-        self._vocoder_path = vocoder
-        self._serial = os.environ.get("TTS_GENTLEMAN_SERIAL_SESSION", "0") == "1"
-        ort, providers = _piper_ort_providers(hw_provider)
-        so = _ort_lowmem_session_options(ort, num_threads)
-        self._ort = ort
-        self._sess = ort.InferenceSession(acoustic, sess_options=so, providers=providers)
-        _dump_stage("after_matcha_session")
-        vocoder_hw = os.environ.get("TTS_VOCODER_HW", hw_provider).strip() or hw_provider
-        self._vocoder_hw = vocoder_hw
-        if self._serial:
-            self._vocoder = None
-            log.info("[tts] serial sessions ON: BigVGAN loads after Matcha infer")
-        else:
-            log.info("[tts] vocoder hw_provider=%s", vocoder_hw)
-            self._vocoder = _WaveformOrt(vocoder, vocoder_hw, num_threads)
+        self._sess = _load_onnx_session(acoustic, hw_provider, num_threads)[1]
+        self._vocoder = _WaveformOrt(vocoder, hw_provider, num_threads)
         self._model_sr = 16000
-        self._model_dir = model_dir
-        _maybe_malloc_trim("after_gentleman_sessions")
-        # Weights are in the ORT sessions. Do not keep onnx/frontend page cache.
-        from utils.model_downloader import drop_file_pages
-
-        drop_file_pages(model_dir)
-        _dump_stage("after_bigvgan_session")
         log.info(
-            "[tts] PhoneTone ORT loaded: model_dir=%s acoustic=%s providers=%s iobind=%s serial=%s frontend=%s",
-            model_dir,
+            "[tts] Gentleman loaded: acoustic=%s vocoder=%s providers=%s frontend=%s",
             os.path.basename(acoustic),
+            os.path.basename(vocoder),
             self._sess.get_providers(),
-            _use_ort_iobinding(self._sess),
-            self._serial,
             self._frontend.release,
         )
 
@@ -1532,52 +1483,27 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         return _split_utterance(self, text)
 
     def _synthesize_segment(self, text: str) -> bytes:
-        import gc
         import numpy as np
         from utils.matcha_trt import crop_mel
 
-        packed = self._encode(text, temperature=self._noise_scale, length_scale=1.0 / max(self._speed, 1e-3))
-        _dump_stage("after_encode")
+        packed = self._encode(
+            text,
+            temperature=self._noise_scale,
+            length_scale=1.0 / max(self._speed, 1e-3),
+        )
         feeds = {name: packed[name] for name in ("x", "x_lengths", "tones", "languages", "scales")}
         in_names = {i.name for i in self._sess.get_inputs()}
         if "x_length" in in_names and "x_lengths" not in in_names:
             feeds["x_length"] = feeds.pop("x_lengths")
-        ac_out = _ort_run(self._ort, self._sess, feeds)
-        _dump_stage("after_matcha_infer")
+        ac_out = _ort_outputs(self._sess, feeds)
         mel = ac_out.get("mel")
         if mel is None:
             raise RuntimeError("no mel in %s" % list(ac_out))
         cropped = crop_mel(mel, packed["real_len"], ac_out.get("mel_lengths"))
         mel_bct = np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
-        if self._serial:
-            self._sess = None
-            gc.collect()
-            _maybe_malloc_trim("after_drop_matcha")
-            _dump_stage("after_drop_matcha")
-            vocoder = _WaveformOrt(self._vocoder_path, self._vocoder_hw, self._num_threads)
-            samples = vocoder.infer(mel_bct)
-            _dump_stage("after_vocoder_infer")
-            del vocoder
-            gc.collect()
-            so = _ort_lowmem_session_options(self._ort, self._num_threads)
-            _, providers = _piper_ort_providers(self._hw_provider)
-            self._sess = self._ort.InferenceSession(
-                self._acoustic_path, sess_options=so, providers=providers
-            )
-            _dump_stage("after_reload_matcha")
-        else:
-            samples = self._vocoder.infer(mel_bct)
-            _dump_stage("after_vocoder_infer")
-        print(
-            "SEG_MEL chars=%d T=%s samples_hint=%s"
-            % (len(text), int(np.asarray(cropped).shape[-1]), int(np.asarray(cropped).shape[-1]) * 256),
-            flush=True,
-        )
+        samples = self._vocoder.infer(mel_bct)
         samples = _resample_to_16k(samples, self._model_sr)
-        pcm = _float_samples_to_pcm16(samples)
-        del packed, feeds, ac_out, mel, cropped, mel_bct, samples
-        gc.collect()
-        return pcm
+        return _float_samples_to_pcm16(samples)
 
 
 class MatchaTRTAdapter(TTSAdapter):
