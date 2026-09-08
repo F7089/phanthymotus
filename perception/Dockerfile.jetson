@@ -146,7 +146,6 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
     TTS_ORT_GPU_MEM_LIMIT_MB=256 \
     TTS_VOCODER_GPU_MEM_LIMIT_MB=128 \
     TTS_ORT_IOBINDING=0 \
-    TTS_GPU_LOCK=1 \
     TTS_GENTLEMAN_SERIAL_SESSION=0 \
     TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config
 LABEL com.nvidia.volumes.needed="nvidia_driver"
