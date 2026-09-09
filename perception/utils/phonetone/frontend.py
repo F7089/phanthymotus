@@ -54,29 +54,74 @@ def _release() -> Path:
     return release_root()
 
 
+_NEED_TN_RE = re.compile(r"[0-9０-９]")
+_LETTER_ARPA = {
+    "A": ["EY1"],
+    "B": ["B", "IY1"],
+    "C": ["S", "IY1"],
+    "D": ["D", "IY1"],
+    "E": ["IY1"],
+    "F": ["EH1", "F"],
+    "G": ["JH", "IY1"],
+    "H": ["EY1", "CH"],
+    "I": ["AY1"],
+    "J": ["JH", "EY1"],
+    "K": ["K", "EY1"],
+    "L": ["EH1", "L"],
+    "M": ["EH1", "M"],
+    "N": ["EH1", "N"],
+    "O": ["OW1"],
+    "P": ["P", "IY1"],
+    "Q": ["K", "Y", "UW1"],
+    "R": ["AA1", "R"],
+    "S": ["EH1", "S"],
+    "T": ["T", "IY1"],
+    "U": ["Y", "UW1"],
+    "V": ["V", "IY1"],
+    "W": ["D", "AH1", "B", "AH0", "L", "Y", "UW0"],
+    "X": ["EH1", "K", "S"],
+    "Y": ["W", "AY1"],
+    "Z": ["Z", "IY1"],
+}
+
+
 @lru_cache(maxsize=1)
-def _assets():
+def _zh_assets():
     root = _release()
     mapping = {}
     for line in (root / "opencpop-strict.txt").read_text(encoding="utf-8").splitlines():
         pinyin, phones = line.split("\t", 1)
         mapping[pinyin] = phones.split()
-    custom_en = json.loads((root / "custom_en_pronunciations.json").read_text(encoding="utf-8"))
+    load_phrases_dict(custom_dict, style="tone2")
+    for phrase in jieba_phrases:
+        jieba.add_word(phrase)
+    return mapping, ToneSandhi()
+
+
+@lru_cache(maxsize=1)
+def _custom_en() -> dict:
+    return json.loads((_release() / "custom_en_pronunciations.json").read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=1)
+def _cmu() -> dict:
     cmu = {}
-    with (root / "cmudict.rep").open(encoding="utf-8") as source:
+    with (_release() / "cmudict.rep").open(encoding="utf-8") as source:
         for line in source:
             if line.startswith("##") or "  " not in line:
                 continue
             word, pronunciation = line.rstrip().split("  ", 1)
             cmu.setdefault(re.sub(r"\(\d+\)$", "", word), pronunciation.replace(" - ", " ").split())
-    load_phrases_dict(custom_dict, style="tone2")
-    for phrase in jieba_phrases:
-        jieba.add_word(phrase)
-    return mapping, custom_en, cmu, FstNormalizer(root / "tn_cache"), ToneSandhi()
+    return cmu
+
+
+@lru_cache(maxsize=1)
+def _fst() -> FstNormalizer:
+    return FstNormalizer(_release() / "tn_cache")
 
 
 def _zh_phones(text: str, gold_lexical_pinyin: Sequence[str] | None = None):
-    mapping, _, _, _, sandhi = _assets()
+    mapping, sandhi = _zh_assets()
     phones, tones = [], []
     lexical = lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True)
     lexical = apply_overlay(text, lexical, _lexical_overlay())
@@ -160,11 +205,21 @@ def _g2p():
     return G2p()
 
 
+def _letter_arpa(word: str) -> list[str]:
+    phones = []
+    for char in word.upper():
+        if char in _LETTER_ARPA:
+            phones.extend(_LETTER_ARPA[char])
+    return phones
+
+
 def _en_phones(word: str):
-    _, custom_en, cmu, _, _ = _assets()
-    pronunciation = custom_en.get(word.upper()) or cmu.get(word.upper())
+    pronunciation = _custom_en().get(word.upper()) or _cmu().get(word.upper())
     if pronunciation is None:
-        pronunciation = [value for value in _g2p()(word) if value != " "]
+        if os.environ.get("TTS_ENABLE_G2P_EN", "0") == "1":
+            pronunciation = [value for value in _g2p()(word) if value != " "]
+        else:
+            pronunciation = _letter_arpa(word)
     converted = [_arpa_to_phone(value) for value in pronunciation if _ARPA_RE.fullmatch(value)]
     if not converted:
         raise ValueError(f"English G2P produced no phones: {word!r}")
@@ -172,8 +227,8 @@ def _en_phones(word: str):
 
 
 def prepare_phonetone(text: str, gold_lexical_pinyin: Sequence[str] | None = None) -> PhoneToneResult:
-    _, _, _, normalizer, _ = _assets()
-    normalized = transliterate_non_cjk(normalizer(text)).replace("嗯", "恩").replace("呣", "母")
+    raw = _fst()(text) if _NEED_TN_RE.search(text or "") else (text or "")
+    normalized = transliterate_non_cjk(raw).replace("嗯", "恩").replace("呣", "母")
     if gold_lexical_pinyin is not None and len(gold_lexical_pinyin) != len(normalized):
         raise ValueError(
             f"Gold/text alignment mismatch: {len(gold_lexical_pinyin)} != {len(normalized)}"
