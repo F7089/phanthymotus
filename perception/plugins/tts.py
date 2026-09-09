@@ -234,25 +234,23 @@ def _ort_lowmem_session_options(ort, num_threads: int):
     return so
 
 
-def _load_onnx_session(onnx_path: str, hw_provider: str, num_threads: int):
-    """Plain CUDA (or CPU) InferenceSession. No arena cap, no IOBinding."""
+def _load_onnx_session(
+    onnx_path: str,
+    hw_provider: str,
+    num_threads: int,
+    gpu_mem_limit_mb: int | None = None,
+):
+    """CUDA session with a per-session arena cap. Still sess.run, no IOBinding.
+
+    Uncapped CUDA EP on JP5 grabs several GB of unified memory on first Run
+    (cuDNN workspace + BFC). Default 512MB Matcha / 128MB BigVGAN.
+    """
     import os
 
-    import onnxruntime as ort
-
-    so = ort.SessionOptions()
-    so.intra_op_num_threads = max(1, int(num_threads))
-    so.inter_op_num_threads = 1
-    hw = (hw_provider or "cpu").lower().strip()
-    if hw == "cuda":
-        available = ort.get_available_providers()
-        if "CUDAExecutionProvider" not in available:
-            raise RuntimeError(
-                "CUDAExecutionProvider missing; available=%s" % available
-            )
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    else:
-        providers = ["CPUExecutionProvider"]
+    ort, providers = _piper_ort_providers(
+        hw_provider, gpu_mem_limit_mb=gpu_mem_limit_mb
+    )
+    so = _ort_lowmem_session_options(ort, num_threads)
     sess = ort.InferenceSession(onnx_path, sess_options=so, providers=providers)
     log.info(
         "[tts] onnx %s providers=%s",
@@ -291,7 +289,11 @@ class _WaveformOrt:
     """BigVGAN (or any mel→wav) ONNX."""
 
     def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
-        _ort, self._sess = _load_onnx_session(onnx_path, hw_provider, num_threads)
+        voc_mb = os.environ.get("TTS_VOCODER_GPU_MEM_LIMIT_MB", "128").strip()
+        gpu_mb = int(voc_mb) if voc_mb.isdigit() and int(voc_mb) > 0 else 128
+        _ort, self._sess = _load_onnx_session(
+            onnx_path, hw_provider, num_threads, gpu_mem_limit_mb=gpu_mb
+        )
         self._in = self._sess.get_inputs()[0].name
 
     def infer(self, mel_bct):
