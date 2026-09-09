@@ -285,6 +285,21 @@ def _phonetone_vocoder_path(model_dir: str) -> str:
     return os.path.join(model_dir, "bigvgan.onnx")
 
 
+def _phonetone_e2e_path(model_dir: str) -> str:
+    """Optional merged Matcha+BigVGAN ONNX. Never required for ranking.
+
+    Priority: TTS_GENTLEMAN_E2E_ONNX > {model_dir}/gentleman-e2e.onnx > "".
+    Empty means the caller must keep the two-session Matcha + BigVGAN path.
+    """
+    import os
+
+    env = os.environ.get("TTS_GENTLEMAN_E2E_ONNX", "").strip()
+    if env:
+        return env
+    path = os.path.join(model_dir, "gentleman-e2e.onnx")
+    return path if os.path.isfile(path) else ""
+
+
 class _WaveformOrt:
     """BigVGAN (or any mel→wav) ONNX."""
 
@@ -1437,7 +1452,12 @@ class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
 
 
 class MatchaPhoneToneOrtAdapter(TTSAdapter):
-    """PhoneTone frontend + Matcha ONNX + BigVGAN ONNX."""
+    """PhoneTone frontend + Matcha ONNX + BigVGAN ONNX.
+
+    Default is two CUDA sessions (Matcha then BigVGAN, sess.run). If
+    TTS_GENTLEMAN_E2E_ONNX or model_dir/gentleman-e2e.onnx exists, one
+    merged session is used instead. Missing e2e file always falls back.
+    """
 
     def __init__(
         self,
@@ -1463,15 +1483,35 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         self._noise_scale = float(noise_scale)
         self.max_segment_chars = MAX_SEGMENT_CHARS
         self.text_normalize = False
+        self._model_sr = 16000
         acoustic = _phonetone_acoustic_path(model_dir)
         vocoder = _phonetone_vocoder_path(model_dir)
+        e2e = _phonetone_e2e_path(model_dir)
+        if e2e:
+            if not os.path.isfile(e2e):
+                raise FileNotFoundError(e2e)
+            e2e_mb = os.environ.get("TTS_E2E_GPU_MEM_LIMIT_MB", "640").strip()
+            gpu_mb = int(e2e_mb) if e2e_mb.isdigit() and int(e2e_mb) > 0 else 640
+            self._sess = _load_onnx_session(
+                e2e, hw_provider, num_threads, gpu_mem_limit_mb=gpu_mb
+            )[1]
+            self._vocoder = None
+            self._e2e = True
+            log.info(
+                "[tts] Gentleman e2e loaded: onnx=%s providers=%s frontend=%s gpu_mem_limit_mb=%s",
+                e2e,
+                self._sess.get_providers(),
+                self._frontend.release,
+                gpu_mb,
+            )
+            return
+        self._e2e = False
         if not os.path.isfile(acoustic):
             raise FileNotFoundError(acoustic)
         if not os.path.isfile(vocoder):
             raise FileNotFoundError(vocoder)
         self._sess = _load_onnx_session(acoustic, hw_provider, num_threads)[1]
         self._vocoder = _WaveformOrt(vocoder, hw_provider, num_threads)
-        self._model_sr = 16000
         log.info(
             "[tts] Gentleman loaded: acoustic=%s vocoder=%s providers=%s frontend=%s",
             os.path.basename(acoustic),
@@ -1497,11 +1537,22 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         in_names = {i.name for i in self._sess.get_inputs()}
         if "x_length" in in_names and "x_lengths" not in in_names:
             feeds["x_length"] = feeds.pop("x_lengths")
-        ac_out = _ort_outputs(self._sess, feeds)
-        mel = ac_out.get("mel")
+        out = _ort_outputs(self._sess, feeds)
+        if getattr(self, "_e2e", False):
+            wav = out.get("v/wav", out.get("wav"))
+            if wav is None:
+                raise RuntimeError("no wav in %s" % list(out))
+            samples = np.asarray(wav, dtype=np.float32).reshape(-1)
+            mel_lengths = out.get("mel_lengths")
+            if mel_lengths is not None:
+                cap = max(1, int(np.asarray(mel_lengths).reshape(-1)[0]) * 256)
+                samples = samples[:cap]
+            samples = _resample_to_16k(samples, self._model_sr)
+            return _float_samples_to_pcm16(samples)
+        mel = out.get("mel")
         if mel is None:
-            raise RuntimeError("no mel in %s" % list(ac_out))
-        cropped = crop_mel(mel, packed["real_len"], ac_out.get("mel_lengths"))
+            raise RuntimeError("no mel in %s" % list(out))
+        cropped = crop_mel(mel, packed["real_len"], out.get("mel_lengths"))
         mel_bct = np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
         samples = self._vocoder.infer(mel_bct)
         samples = _resample_to_16k(samples, self._model_sr)
