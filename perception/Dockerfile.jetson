@@ -51,8 +51,9 @@ RUN cd /ros_ws && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cache
 
 # Gentleman PhoneTone + ROS MCP. --ignore-installed: JP5 base PyYAML is distutils.
+# No webrtcvad/dashscope: ASR is disabled and those would need gcc after we purge it.
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
-    --ignore-installed pyyaml requests websockets webrtcvad websocket-client dashscope psutil \
+    --ignore-installed pyyaml websockets psutil \
     kaldifst jieba pypinyin unidecode
 
 # Bake onnxruntime-gpu into the image (do not pip-install at container start).
