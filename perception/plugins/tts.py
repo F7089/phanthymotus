@@ -323,6 +323,30 @@ TOOLS = [
 
 # ── TTS Adapter ──────────────────────────────────────────────────────────────
 
+# Split priority (prosody first, memory second):
+#   。！？； / .!?  → always
+#   ，,            → only when the clause is already long
+#   、              → last-resort backstop, not a normal cut
+_STRONG_SENTENCE_END = frozenset("。！？；;!?")
+_COMMA_CHARS = frozenset("，,")
+_WEAK_SENTENCE_END = frozenset("、：:")
+_CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
+_PAUSE_MS = {
+    "，": 120,
+    ",": 120,
+    "、": 80,
+    "；": 200,
+    ";": 200,
+    "：": 150,
+    ":": 150,
+    "。": 280,
+    "！": 280,
+    "？": 280,
+    "!": 280,
+    "?": 280,
+    "．": 280,
+}
+
 
 def _is_cjk(char: str) -> bool:
     """Return True for common CJK code-point ranges."""
