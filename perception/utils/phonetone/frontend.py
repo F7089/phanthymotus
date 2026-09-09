@@ -194,17 +194,6 @@ def _arpa_to_phone(value: str):
     return symbol, int(stress) + 1 if stress is not None else 3
 
 
-@lru_cache(maxsize=1)
-def _g2p():
-    import nltk
-    from g2p_en import G2p
-
-    local_nltk = str(_release() / "nltk_data")
-    if local_nltk not in nltk.data.path:
-        nltk.data.path.insert(0, local_nltk)
-    return G2p()
-
-
 def _letter_arpa(word: str) -> list[str]:
     phones = []
     for char in word.upper():
@@ -216,10 +205,7 @@ def _letter_arpa(word: str) -> list[str]:
 def _en_phones(word: str):
     pronunciation = _custom_en().get(word.upper()) or _cmu().get(word.upper())
     if pronunciation is None:
-        if os.environ.get("TTS_ENABLE_G2P_EN", "0") == "1":
-            pronunciation = [value for value in _g2p()(word) if value != " "]
-        else:
-            pronunciation = _letter_arpa(word)
+        pronunciation = _letter_arpa(word)
     converted = [_arpa_to_phone(value) for value in pronunciation if _ARPA_RE.fullmatch(value)]
     if not converted:
         raise ValueError(f"English G2P produced no phones: {word!r}")

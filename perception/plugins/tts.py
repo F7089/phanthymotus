@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-plugins/tts.py — TTSPlugin: sherpa-onnx offline TTS (VITS / Kokoro / Matcha).
-
-Backend selected via config (vits / kokoro / matcha).
+plugins/tts.py — Gentleman TTS (PhoneTone + Matcha + BigVGAN Python ORT).
 """
 
 from __future__ import annotations
@@ -79,71 +77,41 @@ def _maybe_malloc_trim(where: str) -> None:
 
 
 def _piper_run(sess, ort_module, feeds):
-    """ORT session.run. Arena shrinkage is opt-in (hurts RTF on Jetson Melo)."""
-    import os
+    """ORT session.run. GPU arena shrinkage is opt-in via TTS_ORT_ARENA_SHRINK=1.
 
-    if os.environ.get("TTS_ORT_ARENA_SHRINK", "0") != "1":
-        return sess.run(None, feeds)
-    try:
-        run_options = ort_module.RunOptions()
-        run_options.add_run_config_entry(
-            "memory.enable_memory_arena_shrinkage", "gpu:0"
-        )
-        return sess.run(None, feeds, run_options)
-    except Exception:
-        return sess.run(None, feeds)
-
-
-def _sherpa_provider(hw_provider: str) -> str:
-    """sherpa-onnx EP for Matcha/VITS/Kokoro. CUDA only.
-
-    JP5: Vocos TensorRT Runtime was tried and used more cgroup memory than
-    dual CUDA sessions; default is sherpa acoustic+vocos CUDA.
-    Optional: TTS_SHERPA_ORT_CONFIG=/deploy/ort_cuda_jp5.config
+    Shrinkage MUST be a RunOptions entry (gpu:0), not SessionOptions.
     """
     import os
+    import threading
 
-    hw = (hw_provider or "cpu").lower().strip()
-    if hw in ("tensorrt", "trt"):
-        log.warning("[tts] ignoring TensorRT for sherpa TTS; using CUDA EP only")
-        hw = "cuda"
-    if hw != "cuda":
-        return hw
-    cfg = os.environ.get("TTS_SHERPA_ORT_CONFIG", "/deploy/ort_cuda_jp5.config").strip()
-    if cfg and os.path.isfile(cfg):
-        return "cuda:%s" % cfg
-    return "cuda"
+    if os.environ.get("TTS_ORT_DUMP_THREAD", "0") == "1":
+        print("TTS ORT THREAD", threading.get_ident(), flush=True)
+    if os.environ.get("TTS_ORT_ARENA_SHRINK", "0") != "1":
+        return sess.run(None, feeds)
+    run_options = ort_module.RunOptions()
+    run_options.add_run_config_entry(
+        "memory.enable_memory_arena_shrinkage",
+        "gpu:0",
+    )
+    if not getattr(_piper_run, "_logged_shrink", False):
+        _piper_run._logged_shrink = True
+        log.info("[tts] ORT RunOptions memory.enable_memory_arena_shrinkage=gpu:0")
+        print("ARENA_SHRINK_APPLIED gpu:0", flush=True)
+    return sess.run(None, feeds, run_options=run_options)
+
 
 
 def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) -> tuple:
-    """Return (onnxruntime module, provider list) for Piper/Melo InferenceSession.
+    """Return (onnxruntime module, provider list) for Gentleman InferenceSession.
 
-    Image installs onnxruntime-gpu (JuiceFS JP6 wheel) with CUDAExecutionProvider.
-
-    JP5 memory defaults: CUDA EP only, cuDNN workspace off, kSameAsRequested,
-    512MB Matcha / 128MB BigVGAN arena cap. TensorRT EP is opt-in (TTS_ORT_USE_TRT=1).
-
-    Memory-oriented knobs (env):
-      TTS_ORT_CUDNN_MAX_WORKSPACE=0|1   (default 0; 1 can add multiple GB)
-      TTS_ORT_ARENA_EXTEND=kSameAsRequested|kNextPowerOfTwo
-      TTS_ORT_GPU_MEM_LIMIT_MB=<int>    (CUDA EP arena cap per session)
-      TTS_VOCODER_GPU_MEM_LIMIT_MB=<int> (BigVGAN session; default 128)
-      TTS_ORT_IOBINDING=0|1             (default 0; sess.run, not CUDA OrtValue)
-      TTS_ORT_CUDNN_ALGO=HEURISTIC|DEFAULT|EXHAUSTIVE
-      TTS_ORT_USE_TRT=1                 (TensorRT EP ahead of CUDA; off by default)
-      TTS_ORT_TRT_WORKSPACE_MB=<int>    (default 512)
-      TTS_ORT_TRT_CACHE=<path>          (engine cache dir)
-    Or set hw_provider=cuda (not tensorrt).
+    CUDA EP only. No TensorRT EP.
     """
     import os
 
     import onnxruntime as ort
 
     hw = (hw_provider or "cpu").lower().strip()
-    use_trt = hw in ("tensorrt", "trt") or (
-        hw == "cuda" and os.environ.get("TTS_ORT_USE_TRT", "0") == "1"
-    )
-    want_gpu = hw in ("cuda", "tensorrt", "trt") or use_trt
+    want_gpu = hw == "cuda"
 
     if want_gpu:
         available = ort.get_available_providers()
@@ -165,33 +133,9 @@ def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) 
         if mem_mb.isdigit() and int(mem_mb) > 0:
             cuda_opts["gpu_mem_limit"] = int(mem_mb) * 1024 * 1024
 
-        providers = []
-        if use_trt and "TensorrtExecutionProvider" in available:
-            ws_mb = int(os.environ.get("TTS_ORT_TRT_WORKSPACE_MB", "512") or "512")
-            cache = os.environ.get(
-                "TTS_ORT_TRT_CACHE", "/tmp/ort_trt_cache_melo"
-            ).strip()
-            os.makedirs(cache, exist_ok=True)
-            trt_opts = {
-                "device_id": 0,
-                "trt_max_workspace_size": ws_mb * 1024 * 1024,
-                "trt_fp16_enable": os.environ.get("TTS_ORT_TRT_FP16", "0") == "1",
-                "trt_engine_cache_enable": True,
-                "trt_engine_cache_path": cache,
-            }
-            providers.append(("TensorrtExecutionProvider", trt_opts))
-            log.info(f"[tts] TensorRT EP options: {trt_opts}")
-        elif use_trt:
-            log.warning(
-                "[tts] TensorRT requested but TensorrtExecutionProvider missing; "
-                f"available={available}; falling back to CUDA EP"
-            )
-
         if "CUDAExecutionProvider" in available:
-            providers.append(("CUDAExecutionProvider", cuda_opts))
-            log.info(f"[tts] CUDA EP options: {cuda_opts}")
-            providers.append("CPUExecutionProvider")
-            return ort, providers
+            log.info("[tts] CUDA EP options: %s", cuda_opts)
+            return ort, [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
 
         require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
         msg = (
@@ -201,7 +145,7 @@ def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) 
         if require:
             raise RuntimeError(
                 msg
-                + " (TTS_REQUIRE_CUDA=1). Rebuild with JuiceFS onnxruntime-gpu "
+                + " (TTS_REQUIRE_CUDA=1). Rebuild with onnxruntime-gpu "
                 "(see Dockerfile.jetson)."
             )
         log.warning(msg + "; using CPU")
@@ -209,7 +153,7 @@ def _piper_ort_providers(hw_provider: str, gpu_mem_limit_mb: int | None = None) 
 
 
 def _ort_lowmem_session_options(ort, num_threads: int):
-    """SessionOptions used by Gentleman Matcha/BigVGAN. Melo already uses these knobs."""
+    """SessionOptions used by Gentleman Matcha/BigVGAN."""
     import os
 
     so = ort.SessionOptions()
@@ -261,8 +205,10 @@ def _load_onnx_session(
 
 
 def _ort_outputs(sess, feeds: dict) -> dict:
+    import onnxruntime as ort
+
     names = [o.name for o in sess.get_outputs()]
-    return dict(zip(names, sess.run(None, feeds)))
+    return dict(zip(names, _piper_run(sess, ort, feeds)))
 
 
 def _dump_stage(tag: str) -> None:
@@ -315,98 +261,18 @@ class _WaveformOrt:
         import numpy as np
 
         mel = np.ascontiguousarray(mel_bct, dtype=np.float32)
-        wav = _ort_outputs(self._sess, {self._in: mel})[self._sess.get_outputs()[0].name]
-        wav = np.asarray(wav, dtype=np.float32).reshape(-1)
+        name = self._sess.get_outputs()[0].name
+        wav = np.asarray(
+            _ort_outputs(self._sess, {self._in: mel})[name], dtype=np.float32
+        ).reshape(-1)
         cap = int(mel.shape[-1]) * 256
         return wav[:cap]
 
-
 _maybe_set_cpu_affinity()
 
-# US English letter NAMES (not article/pronoun). Merged into product lexicon so
-# ALLCAPS split (AI→A I) does not hit cmudict word readings (a→/ə/, I→pronoun).
-_LETTER_NAME_ARPABET: dict[str, list[str]] = {
-    "a": ["EY1"],
-    "b": ["B", "IY1"],
-    "c": ["S", "IY1"],
-    "d": ["D", "IY1"],
-    "e": ["IY1"],
-    "f": ["EH1", "F"],
-    "g": ["JH", "IY1"],
-    "h": ["EY1", "CH"],
-    "i": ["AY1"],
-    "j": ["JH", "EY1"],
-    "k": ["K", "EY1"],
-    "l": ["EH1", "L"],
-    "m": ["EH1", "M"],
-    "n": ["EH1", "N"],
-    "o": ["OW1"],
-    "p": ["P", "IY1"],
-    "q": ["K", "Y", "UW1"],
-    "r": ["AA1", "R"],
-    "s": ["EH1", "S"],
-    "t": ["T", "IY1"],
-    "u": ["Y", "UW1"],
-    "v": ["V", "IY1"],
-    "w": ["D", "AH1", "B", "AH0", "L", "Y", "UW0"],
-    "x": ["EH1", "K", "S"],
-    "y": ["W", "AY1"],
-    "z": ["Z", "IY1"],
-}
-
-
-def _merge_letter_name_lexicon(lexicon: dict) -> dict:
-    """Ensure a–z letter-name ARPAbet entries win over cmudict word readings."""
-    out = dict(lexicon or {})
-    for k, v in _LETTER_NAME_ARPABET.items():
-        out[k] = list(v)
-    return out
-
-
-# Split priority (prosody first, memory second):
-#   。！？； / .!?  → always
-#   ，,            → only when the clause is already long
-#   、              → last-resort backstop, not a normal cut
-_STRONG_SENTENCE_END = frozenset("。！？；;!?")
-_COMMA_CHARS = frozenset("，,")
-_WEAK_SENTENCE_END = frozenset("、：:")
-_CLOSING_PUNCTUATION = frozenset("”’\"'》〉】〕）)]}」』")
-_PAUSE_MS = {
-    "，": 120,
-    ",": 120,
-    "、": 80,
-    "；": 200,
-    ";": 200,
-    "：": 150,
-    ":": 150,
-    "。": 280,
-    "！": 280,
-    "？": 280,
-    "!": 280,
-    "?": 280,
-    "．": 280,
-}
-
-_tn_normalizer = None  # legacy; normalization via utils.tts_text_frontend
-
-
 def _normalize_tts_text(text: str) -> str:
-    """Acronym expand + lead text_process (numbers/units) + WeText."""
-    if not text or not text.strip():
-        return text
-    try:
-        from utils.tts_text_frontend import normalize_for_tts
-
-        return normalize_for_tts(
-            text,
-            expand_acronyms=True,
-            use_text_process=True,
-            use_wetext=True,
-            language="zh",
-        )
-    except Exception as e:
-        log.warning(f"[tts] text normalization skipped: {e}")
-        return text
+    """PhoneTone does TN itself. Keep a no-op for the generic adapter API."""
+    return text or ""
 
 
 _LOW_LAT_QOS = QoSProfile(
@@ -681,16 +547,10 @@ class TTSAdapter(ABC):
 
 
 def _resample_to_16k(samples, src_rate: int):
-    """Resample float PCM to 16 kHz for audio/pcm-16k output."""
-    if src_rate == SAMPLE_RATE:
+    """Gentleman models are 16 kHz. Reject any other rate instead of pulling scipy."""
+    if int(src_rate) == SAMPLE_RATE:
         return samples
-    from math import gcd
-
-    import numpy as np
-    from scipy.signal import resample_poly
-
-    g = gcd(src_rate, SAMPLE_RATE)
-    return resample_poly(np.asarray(samples, dtype=np.float32), SAMPLE_RATE // g, src_rate // g)
+    raise RuntimeError("Gentleman TTS expected 16 kHz, got %s" % src_rate)
 
 
 def _float_samples_to_pcm16(samples) -> bytes:
@@ -700,755 +560,6 @@ def _float_samples_to_pcm16(samples) -> bytes:
     x = np.clip(x * 32767.0, -32768, 32767).astype(np.int16)
     return x.tobytes()
 
-
-class SherpaOnnxVitsTTSAdapter(TTSAdapter):
-    """On-device TTS using sherpa-onnx VITS (e.g. vits-melo-tts-zh_en-8k)."""
-
-    def __init__(self, model_dir: str, speaker_id: int = 0, speed: float = 1.0,
-                 model_name: str = "tts_melo_8k", hw_provider: str = "cpu",
-                 num_threads: int = 4):
-        import os
-        from utils.model_downloader import ensure_model
-
-        ensure_model(model_name, model_dir)
-
-        import sherpa_onnx
-
-        mem_before = _process_rss_mb()
-        model_path = os.path.join(model_dir, "model.onnx")
-        model_size_mb = os.path.getsize(model_path) / (1024 * 1024) if os.path.exists(model_path) else 0.0
-        tokens_path = os.path.join(model_dir, "tokens.txt")
-        espeak_data_dir = os.path.join(model_dir, "espeak-ng-data")
-        lexicon_path = os.path.join(model_dir, "lexicon.txt")
-        dict_dir = os.path.join(model_dir, "dict")
-
-        use_espeak = os.path.isdir(espeak_data_dir)
-
-        rule_fsts = []
-        for name in ("date.fst", "number.fst", "phone.fst"):
-            p = os.path.join(model_dir, name)
-            if os.path.exists(p):
-                rule_fsts.append(p)
-
-        tts_config = sherpa_onnx.OfflineTtsConfig(
-            model=sherpa_onnx.OfflineTtsModelConfig(
-                vits=sherpa_onnx.OfflineTtsVitsModelConfig(
-                    model=model_path,
-                    tokens=tokens_path,
-                    lexicon="" if use_espeak else (lexicon_path if os.path.exists(lexicon_path) else ""),
-                    dict_dir="" if use_espeak else (dict_dir if os.path.isdir(dict_dir) else ""),
-                    data_dir=espeak_data_dir if use_espeak else "",
-                    length_scale=1.0 / speed if speed else 1.0,
-                ),
-                num_threads=num_threads,
-                provider=_sherpa_provider(hw_provider),
-            ),
-            rule_fsts=",".join(rule_fsts) if rule_fsts else "",
-        )
-        self._tts = sherpa_onnx.OfflineTts(tts_config)
-        self._sid = speaker_id
-        self._speed = speed
-        self._model_sr = self._tts.sample_rate
-        self.max_segment_chars = MAX_SEGMENT_CHARS
-        mode = "espeak" if use_espeak else "lexicon"
-        mem_after = _process_rss_mb()
-        log.info(
-            f"[tts] sherpa-onnx VITS loaded: model_dir={model_dir}, mode={mode}, "
-            f"sample_rate={self._model_sr}, model_size_mb={model_size_mb:.1f}, "
-            f"speaker_id={speaker_id}, speed={speed}, "
-            f"provider={hw_provider}, num_threads={num_threads}, "
-            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
-        )
-
-    def _synthesize_segment(self, text: str) -> bytes:
-        audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
-        samples = _resample_to_16k(audio.samples, self._model_sr)
-        return _float_samples_to_pcm16(samples)
-
-
-def _resolve_kokoro_model_path(model_dir: str) -> tuple[str, float]:
-    """Return (onnx path, size_mb). Prefer model.onnx, else model.int8.onnx."""
-    import os
-
-    for name in ("model.onnx", "model.int8.onnx"):
-        path = os.path.join(model_dir, name)
-        if os.path.isfile(path):
-            size_mb = os.path.getsize(path) / (1024 * 1024)
-            return path, size_mb
-    raise FileNotFoundError(
-        f"no Kokoro model.onnx under {model_dir} (expected model.onnx or model.int8.onnx)"
-    )
-
-
-def _kokoro_lexicon_csv(model_dir: str) -> str:
-    import os
-
-    parts = []
-    for name in (
-        "lexicon-us-en.txt",
-        "lexicon-gb-en.txt",
-        "lexicon-zh.txt",
-    ):
-        path = os.path.join(model_dir, name)
-        if os.path.isfile(path):
-            parts.append(path)
-    return ",".join(parts)
-
-
-class SherpaOnnxKokoroTTSAdapter(TTSAdapter):
-    """On-device TTS using sherpa-onnx Kokoro (e.g. kokoro-int8-multi-lang-v1_1)."""
-
-    def __init__(
-        self,
-        model_dir: str,
-        speaker_id: int = 45,
-        speed: float = 1.0,
-        model_name: str = "tts_kokoro_int8",
-        hw_provider: str = "cpu",
-        num_threads: int = 2,
-    ):
-        import os
-        from utils.model_downloader import ensure_model
-
-        ensure_model(model_name, model_dir)
-
-        import sherpa_onnx
-
-        mem_before = _process_rss_mb()
-        model_path, model_size_mb = _resolve_kokoro_model_path(model_dir)
-        voices_path = os.path.join(model_dir, "voices.bin")
-        tokens_path = os.path.join(model_dir, "tokens.txt")
-        data_dir = os.path.join(model_dir, "espeak-ng-data")
-        if not os.path.isdir(data_dir):
-            data_dir = ""
-
-        rule_fsts = []
-        for name in ("date-zh.fst", "number-zh.fst", "phone-zh.fst"):
-            p = os.path.join(model_dir, name)
-            if os.path.exists(p):
-                rule_fsts.append(p)
-
-        length_scale = 1.0 / speed if speed else 1.0
-        tts_config = sherpa_onnx.OfflineTtsConfig(
-            model=sherpa_onnx.OfflineTtsModelConfig(
-                kokoro=sherpa_onnx.OfflineTtsKokoroModelConfig(
-                    model=model_path,
-                    voices=voices_path,
-                    tokens=tokens_path,
-                    data_dir=data_dir,
-                    lexicon=_kokoro_lexicon_csv(model_dir),
-                    length_scale=length_scale,
-                ),
-                num_threads=num_threads,
-                provider=_sherpa_provider(hw_provider),
-            ),
-            rule_fsts=",".join(rule_fsts) if rule_fsts else "",
-        )
-        self._tts = sherpa_onnx.OfflineTts(tts_config)
-        self._sid = speaker_id
-        self._speed = speed
-        self._model_sr = self._tts.sample_rate
-        self.max_segment_chars = MAX_SEGMENT_CHARS
-        mem_after = _process_rss_mb()
-        log.info(
-            f"[tts] sherpa-onnx Kokoro loaded: model_dir={model_dir}, "
-            f"model={os.path.basename(model_path)}, sample_rate={self._model_sr}, "
-            f"model_size_mb={model_size_mb:.1f}, speaker_id={speaker_id}, speed={speed}, "
-            f"provider={hw_provider}, num_threads={num_threads}, "
-            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
-        )
-
-    def _synthesize_segment(self, text: str) -> bytes:
-        audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
-        samples = _resample_to_16k(audio.samples, self._model_sr)
-        return _float_samples_to_pcm16(samples)
-
-
-class SherpaOnnxTTSAdapter(TTSAdapter):
-    """On-device TTS using sherpa-onnx Matcha (flow-matching, fast non-autoregressive)."""
-
-    def __init__(
-        self,
-        model_dir: str,
-        speaker_id: int = 0,
-        speed: float = 1.0,
-        model_name: str = "tts",
-        hw_provider: str = "cpu",
-        num_threads: int = 2,
-        noise_scale: float = 0.667,
-        wetext_dir: str = "",
-    ):
-        import os
-        from utils.matcha_text_frontend import MatchaTextFrontend
-        from utils.model_downloader import ensure_model
-        ensure_model(model_name, model_dir)
-        ensure_model("tts_vocoder", model_dir)
-        if wetext_dir:
-            try:
-                ensure_model("tts_wetext", wetext_dir)
-            except Exception as e:
-                log.warning("[tts] WeText JuiceFS load skipped: %s", e)
-
-        import sherpa_onnx
-
-        ep = _sherpa_provider(hw_provider)
-        mem_before = _process_rss_mb()
-        acoustic_model = os.path.join(model_dir, "model-steps-3.onnx")
-        vocoder = os.path.join(model_dir, "vocos-16khz-univ.onnx")
-        lexicon_path = os.path.join(model_dir, "lexicon.txt")
-        tokens_path = os.path.join(model_dir, "tokens.txt")
-        data_dir = os.path.join(model_dir, "espeak-ng-data")
-        if not os.path.isdir(data_dir):
-            data_dir = ""
-
-        self._frontend = MatchaTextFrontend(wetext_dir or None)
-        # WeText already verbalizes numbers/dates/ALLCAPS. Do not stack sherpa FSTs.
-        rule_fsts = []
-        if not self._frontend.has_wetext:
-            for name in ("phone-zh.fst", "date-zh.fst", "number-zh.fst"):
-                p = os.path.join(model_dir, name)
-                if os.path.exists(p):
-                    rule_fsts.append(p)
-
-        vocos_trt = os.environ.get("TTS_VOCOS_TRT", "0") == "1"
-        cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
-        self._vocos = None
-        if vocos_trt:
-            from utils.matcha_skip_vocoder import alias_acoustic_audio_output
-            from utils.vocos_trt import VocosTRT
-
-            if not os.path.isfile(vocoder):
-                raise FileNotFoundError("vocos onnx missing: %s" % vocoder)
-            acoustic_model = alias_acoustic_audio_output(acoustic_model, cache)
-            self._vocos = VocosTRT(vocoder, cache)
-
-        matcha_kw = dict(
-            acoustic_model=acoustic_model,
-            vocoder="" if self._vocos is not None else vocoder,
-            lexicon=lexicon_path if os.path.exists(lexicon_path) else "",
-            tokens=tokens_path,
-            data_dir=data_dir,
-            noise_scale=float(noise_scale),
-        )
-        tts_kw = dict(
-            model=sherpa_onnx.OfflineTtsModelConfig(
-                matcha=sherpa_onnx.OfflineTtsMatchaModelConfig(**matcha_kw),
-                num_threads=num_threads,
-                provider=ep,
-            ),
-            rule_fsts=",".join(rule_fsts) if rule_fsts else "",
-        )
-        try:
-            tts_config = sherpa_onnx.OfflineTtsConfig(
-                **tts_kw, max_num_sentences=-1
-            )
-        except TypeError:
-            tts_config = sherpa_onnx.OfflineTtsConfig(**tts_kw)
-        self._tts = sherpa_onnx.OfflineTts(tts_config)
-        self._sid = speaker_id
-        self._speed = speed
-        self._model_sr = 16000 if self._vocos is not None else self._tts.sample_rate
-        self.max_segment_chars = MAX_SEGMENT_CHARS
-        self.text_normalize = False
-        mem_after = _process_rss_mb()
-        log.info(
-            f"[tts] sherpa-onnx Matcha loaded: model_dir={model_dir}, "
-            f"sample_rate={self._model_sr}, speaker_id={speaker_id}, speed={speed}, "
-            f"provider={ep}, num_threads={num_threads}, "
-            f"noise_scale={noise_scale}, wetext={self._frontend.has_wetext}, "
-            f"vocos={'tensorrt-runtime' if self._vocos is not None else 'sherpa-ort'}, "
-            f"memory_mb={mem_before:.1f}->{mem_after:.1f}"
-        )
-
-    def split_text(self, text: str) -> list[str]:
-        text = self._frontend.normalize(text)
-        return _split_utterance(self, text)
-
-    def _synthesize_segment(self, text: str) -> bytes:
-        audio = self._tts.generate(text, sid=self._sid, speed=self._speed)
-        if audio is None or getattr(audio, "samples", None) is None or len(audio.samples) == 0:
-            return b""
-        if self._vocos is not None:
-            samples = self._vocos.mel_flat_to_pcm(audio.samples)
-            src_rate = 16000
-        else:
-            samples = audio.samples
-            src_rate = self._tts.sample_rate
-        samples = _resample_to_16k(samples, src_rate)
-        return _float_samples_to_pcm16(samples)
-
-
-class PiperDualG2PTTSAdapter(TTSAdapter):
-    """Piper-plus MB-iSTFT ONNX + dual ZH/EN frontend (package under model_dir).
-
-    Expected files in model_dir (from piper-longanlingxin-b2.tar.bz2):
-      model.onnx, model.onnx.json, product_lexicon_arpabet.json,
-      dual_zh_en_frontend.py, vendor/g2p/piper_plus_g2p/
-    """
-
-    def __init__(
-        self,
-        model_dir: str,
-        speaker_id: int = 0,
-        speed: float = 0.85,
-        model_name: str = "tts_piper_b2",
-        hw_provider: str = "cpu",
-        num_threads: int = 2,
-        noise_scale: float = 0.667,
-        noise_scale_w: float = 0.8,
-    ):
-        import os
-        import sys
-        from utils.model_downloader import ensure_model
-
-        ensure_model(model_name, model_dir)
-
-        mem_before = _process_rss_mb()
-        model_path = os.path.join(model_dir, "model.onnx")
-        config_path = os.path.join(model_dir, "model.onnx.json")
-        if not os.path.isfile(config_path):
-            alt = os.path.join(model_dir, "config.json")
-            config_path = alt if os.path.isfile(alt) else config_path
-        lexicon_path = os.path.join(model_dir, "product_lexicon_arpabet.json")
-        frontend_py = os.path.join(model_dir, "dual_zh_en_frontend.py")
-        vendor_g2p = os.path.join(model_dir, "vendor", "g2p")
-
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"missing {model_path}")
-        if not os.path.isfile(config_path):
-            raise FileNotFoundError(f"missing {config_path}")
-        if not os.path.isfile(frontend_py):
-            raise FileNotFoundError(f"missing {frontend_py}")
-
-        # Prefer package-local G2P + frontend (self-contained tar).
-        # Must use a normal import (or register in sys.modules before
-        # exec_module): dual_zh_en_frontend defines @dataclass types, and
-        # dataclasses looks up cls.__module__ in sys.modules — missing entry
-        # → AttributeError: 'NoneType' object has no attribute '__dict__'.
-        if os.path.isdir(vendor_g2p):
-            sys.path.insert(0, vendor_g2p)
-        if model_dir not in sys.path:
-            sys.path.insert(0, model_dir)
-
-        import json
-        import importlib
-        from pathlib import Path
-
-        # Drop a stale module so config-rebuild / multi-instance reloads pick
-        # up the package under model_dir (not a previous path).
-        sys.modules.pop("dual_zh_en_frontend", None)
-        frontend = importlib.import_module("dual_zh_en_frontend")
-
-        self._encode_utterance = frontend.encode_utterance
-        self._language_id_for_utterance = frontend.language_id_for_utterance
-        self._load_arpabet_lexicon = frontend.load_arpabet_lexicon
-        # Cache phonemizers: EnglishPhonemizer/G2p init is expensive per call.
-        self._zh_ph = frontend.ChinesePhonemizer()
-        self._en_ph = frontend.EnglishPhonemizer()
-
-        with open(config_path, encoding="utf-8") as f:
-            cfg = json.load(f)
-        self._id_map = {
-            k: ([int(x) for x in v] if isinstance(v, list) else [int(v)])
-            for k, v in cfg["phoneme_id_map"].items()
-        }
-        # load_arpabet_lexicon expects pathlib.Path (uses .is_file/.read_text).
-        lex_arg = Path(lexicon_path) if os.path.isfile(lexicon_path) else None
-        self._lexicon = _merge_letter_name_lexicon(self._load_arpabet_lexicon(lex_arg))
-        self._model_sr = int((cfg.get("audio") or {}).get("sample_rate") or 22050)
-
-        ort, providers = _piper_ort_providers(hw_provider)
-        so = ort.SessionOptions()
-        # Mild RAM save; avoid arena/spinning clamps that hurt RTF.
-        so.enable_cpu_mem_arena = False
-        so.intra_op_num_threads = max(1, int(num_threads))
-        so.inter_op_num_threads = 1
-        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        self._sess = ort.InferenceSession(
-            model_path, sess_options=so, providers=providers
-        )
-        active = self._sess.get_providers()
-        hw = (hw_provider or "").lower()
-        want_gpu = hw in ("cuda", "tensorrt", "trt")
-        has_gpu = (
-            "CUDAExecutionProvider" in active
-            or "TensorrtExecutionProvider" in active
-        )
-        if want_gpu and not has_gpu:
-            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
-            msg = f"[tts] piper: session providers={active} (wanted GPU)"
-            if require:
-                raise RuntimeError(msg)
-            log.warning(msg)
-        log.info(
-            f"[tts] piper ORT providers={active} "
-            f"(RTF: workspace=1, limit=512)"
-        )
-        self._input_names = {i.name for i in self._sess.get_inputs()}
-        self._sid = int(speaker_id)
-        self._speed = float(speed) if speed else 1.0
-        self._noise_scale = float(noise_scale)
-        self._noise_scale_w = float(noise_scale_w)
-        self.max_segment_chars = MAX_SEGMENT_CHARS
-        model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
-        mem_after = _process_rss_mb()
-        log.info(
-            f"[tts] piper dual-G2P loaded: model_dir={model_dir}, "
-            f"model_size_mb={model_size_mb:.1f}, sr={self._model_sr}, "
-            f"speed={self._speed}, providers={active}, "
-            f"lexicon_size={len(self._lexicon)}, "
-            f"rss_mb={mem_before:.1f}->{mem_after:.1f}"
-        )
-
-    def _synthesize_segment(self, text: str) -> bytes:
-        import numpy as np
-
-        if not text or not text.strip():
-            return b""
-        length_scale = 1.0 / self._speed if self._speed else 1.0
-        _tok, phoneme_ids, prosody_dicts, _plan = self._encode_utterance(
-            text,
-            self._id_map,
-            lexicon=self._lexicon,
-            zh_ph=self._zh_ph,
-            en_ph=self._en_ph,
-        )
-        lid = int(self._language_id_for_utterance(text))
-        feed = {
-            "input": np.array([phoneme_ids], dtype=np.int64),
-            "input_lengths": np.array([len(phoneme_ids)], dtype=np.int64),
-            "scales": np.array(
-                [self._noise_scale, length_scale, self._noise_scale_w],
-                dtype=np.float32,
-            ),
-        }
-        if "lid" in self._input_names:
-            feed["lid"] = np.array([lid], dtype=np.int64)
-        if "sid" in self._input_names:
-            feed["sid"] = np.array([self._sid], dtype=np.int64)
-        if "prosody_features" in self._input_names:
-            rows = []
-            for pf in prosody_dicts:
-                if pf is None:
-                    rows.append([0, 0, 0])
-                else:
-                    rows.append(
-                        [
-                            int(pf.get("a1", 0)),
-                            int(pf.get("a2", 0)),
-                            int(pf.get("a3", 0)),
-                        ]
-                    )
-            feed["prosody_features"] = np.expand_dims(
-                np.array(rows, dtype=np.int64), 0
-            )
-        if "speaker_embedding" in self._input_names:
-            emb_dim = 256
-            for inp in self._sess.get_inputs():
-                if inp.name == "speaker_embedding" and len(inp.shape) >= 2:
-                    if isinstance(inp.shape[1], int):
-                        emb_dim = inp.shape[1]
-            feed["speaker_embedding"] = np.zeros((1, emb_dim), dtype=np.float32)
-            feed["speaker_embedding_mask"] = np.array([[0]], dtype=np.int64)
-
-        audio = np.asarray(
-            _piper_run(self._sess, __import__("onnxruntime"), feed)[0]
-        ).squeeze().astype(np.float32)
-        samples = _resample_to_16k(audio, self._model_sr)
-        return _float_samples_to_pcm16(samples)
-
-
-def _install_slim_g2p_code(text_dir: str) -> None:
-    """Copy slim english G2P .py from the git image into downloaded assets.
-
-    Large files (OpenEPD pickle, checkpoint20.npz, ONNX) stay on JuiceFS.
-    Small code is always taken from the container image built from git.
-    """
-    import shutil
-    from pathlib import Path
-
-    here = Path(__file__).resolve()
-    candidates = [
-        Path("/work/melo_g2p_slim"),
-        here.parents[1] / "melo_g2p_slim",  # perception/melo_g2p_slim
-        here.parents[2] / "deploy" / "melo_g2p_slim",
-        Path.home() / "fanyi" / "phanthymotus" / "deploy" / "melo_g2p_slim",
-        Path.home() / "fanyi" / "phanthymotus" / "perception" / "melo_g2p_slim",
-    ]
-    src_dir = next(
-        (
-            p
-            for p in candidates
-            if (p / "english.py").is_file() and (p / "slim_g2p_oov.py").is_file()
-        ),
-        None,
-    )
-    if src_dir is None:
-        raise FileNotFoundError(
-            "slim G2P code missing in image; expected /work/melo_g2p_slim "
-            "(git → docker build)"
-        )
-    dst = Path(text_dir)
-    dst.mkdir(parents=True, exist_ok=True)
-    for name in ("english.py", "slim_g2p_oov.py", "openepd_compact.py"):
-        src = src_dir / name
-        if src.is_file():
-            shutil.copy2(src, dst / name)
-    eng = (dst / "english.py").read_text(encoding="utf-8")
-    if "from g2p_en import" in eng or "_g2p = G2p()" in eng:
-        raise RuntimeError(f"slim overlay failed; still g2p_en in {dst}/english.py")
-
-
-class MeloOpenEpdOrtTTSAdapter(TTSAdapter):
-    """Melo ONNX via ORT + OpenEPD / ZH_MIX_EN G2P.
-
-    - git/image: slim english.py + slim_g2p_oov.py (/work/melo_g2p_slim)
-    - JuiceFS: openepd pickle, checkpoint20.npz, voice ONNX
-    """
-
-    def __init__(
-        self,
-        model_dir: str,
-        speaker_id: int = 0,
-        speed: float = 0.9,
-        model_name: str = "tts_melo_openepd_fp32",
-        hw_provider: str = "cpu",
-        num_threads: int = 2,
-        noise_scale: float = 0.6,
-        noise_scale_w: float = 0.8,
-        g2p_model_name: str = "tts_melo_openepd_g2p",
-        g2p_dir: str = "/models/melo-openepd-g2p-assets",
-    ):
-        import json
-        import os
-        import sys
-        from utils.model_downloader import ensure_model
-
-        # 1) JuiceFS large assets  2) voice ONNX  3) slim G2P code from image (git)
-        ensure_model(g2p_model_name, g2p_dir)
-        ensure_model(model_name, model_dir)
-        mem_before = _process_rss_mb()
-
-        # Prefer external-data ONNX when packed (lower host RSS; same FP32 math).
-        model_path = os.path.join(model_dir, "model.onnx")
-        ext_path = os.path.join(model_dir, "model.with_external.onnx")
-        if os.path.isfile(ext_path) and os.path.isfile(
-            os.path.join(model_dir, "model.with_external.onnx.data")
-        ):
-            model_path = ext_path
-        elif os.path.isfile(model_path) and os.path.isfile(
-            model_path + ".data"
-        ):
-            pass  # model.onnx + model.onnx.data
-        openepd_pickle = os.path.join(g2p_dir, "openepd_eng_dict.pickle")
-        openepd_oedb = os.path.join(g2p_dir, "openepd_eng_dict.oedb")
-        cfg_path = os.path.join(g2p_dir, "config.json")
-        vendor = os.path.join(g2p_dir, "vendor")
-        g2p_root = os.path.join(vendor, "melo_g2p")
-        text_dir = os.path.join(g2p_root, "text")
-
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(model_path)
-        if not os.path.isfile(cfg_path):
-            raise FileNotFoundError(cfg_path)
-        if not os.path.isfile(openepd_pickle) and not os.path.isfile(openepd_oedb):
-            raise FileNotFoundError(openepd_pickle)
-        if not os.path.isdir(g2p_root):
-            raise FileNotFoundError(g2p_root)
-
-        # Large assets from JuiceFS (not git). Compact .oedb is built locally
-        # from the downloaded pickle on first load (no extra JuiceFS publish).
-        ensure_model("tts_melo_g2p_oov_ckpt", text_dir)
-        # Slim python from image (git) — overwrite whatever was in the assets tar.
-        _install_slim_g2p_code(text_dir)
-
-        openepd = openepd_oedb if os.path.isfile(openepd_oedb) else openepd_pickle
-        os.environ["MELO_OPENEPD_DICT"] = openepd
-        ckpt = os.path.join(text_dir, "checkpoint20.npz")
-        if os.path.isfile(ckpt):
-            os.environ["MELO_G2P_OOV_CKPT"] = ckpt
-        os.environ.setdefault("MELO_SKIP_HF_TOKENIZER", "1")
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")
-        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-
-        if vendor not in sys.path:
-            sys.path.insert(0, vendor)
-        for key in list(sys.modules):
-            if key == "melo_g2p" or key.startswith("melo_g2p."):
-                sys.modules.pop(key, None)
-
-        import melo_g2p  # noqa: F401
-        from melo_g2p.encode import encode_phones_tones
-
-        with open(cfg_path, encoding="utf-8") as f:
-            meta = json.load(f)
-        self._symbols = list(meta.get("symbols") or [])
-        if not self._symbols:
-            raise RuntimeError(f"g2p config.json missing symbols: {cfg_path}")
-        self._add_blank = bool(meta.get("add_blank", True))
-        self._language = str(meta.get("language") or "ZH_MIX_EN")
-        self._model_sr = int(meta.get("sample_rate") or 44100)
-        voice_meta_path = os.path.join(model_dir, "model_meta.json")
-        if os.path.isfile(voice_meta_path):
-            with open(voice_meta_path, encoding="utf-8") as f:
-                vmeta = json.load(f)
-            self._model_sr = int(vmeta.get("sample_rate") or self._model_sr)
-            if speaker_id == 0 and "speaker_id" in vmeta:
-                speaker_id = int(vmeta["speaker_id"])
-
-        self._encode = encode_phones_tones
-        self._sid = int(speaker_id)
-        self._speed = float(speed) if speed else 1.0
-        self._noise_scale = float(noise_scale)
-        self._noise_scale_w = float(noise_scale_w)
-        self.max_segment_chars = MAX_SEGMENT_CHARS
-
-        ort, providers = _piper_ort_providers(hw_provider)
-        so = ort.SessionOptions()
-        # Already False in production (GPT "G"); keep env override for A/B.
-        so.enable_cpu_mem_arena = os.environ.get("TTS_ORT_CPU_ARENA", "0") == "1"
-        # Default True in ORT; set TTS_ORT_MEM_PATTERN=0 for GPT "H".
-        so.enable_mem_pattern = os.environ.get("TTS_ORT_MEM_PATTERN", "1") != "0"
-        # ORT may keep a second prepacked weight layout; disable to trade a bit of
-        # RTF for lower host RSS (session.disable_prepacking).
-        disable_prepack = os.environ.get("TTS_ORT_DISABLE_PREPACKING", "0") == "1"
-        if disable_prepack:
-            so.add_session_config_entry("session.disable_prepacking", "1")
-
-        # ORT-format path: fewer host-side initializer copies when used with
-        # use_ort_model_bytes_* (see deploy/bench_tts_ortfmt_mem.py).
-        # TTS_ORT_MODEL=path.ort  or auto-pick model.ort next to model.onnx
-        ort_model = os.environ.get("TTS_ORT_MODEL", "").strip()
-        if not ort_model:
-            cand = os.path.join(model_dir, "model.ort")
-            if os.path.isfile(cand):
-                ort_model = cand
-        # TTS_ORT_USE_MODEL_BYTES:
-        #   0 = path load (default)
-        #   1 = .ort bytes + use_ort_model_bytes_directly (safer)
-        #   2 = also use_ort_model_bytes_for_initializers (segfaulted on Jetson
-        #       ORT 1.23 + CUDA EP with Melo; opt-in only)
-        use_model_bytes = os.environ.get("TTS_ORT_USE_MODEL_BYTES", "0").strip()
-        load_path = ort_model if ort_model and os.path.isfile(ort_model) else model_path
-        self._ort_model_bytes = None  # keep alive if loading from bytes
-        if load_path.endswith(".ort"):
-            so.add_session_config_entry("session.load_model_format", "ORT")
-        if use_model_bytes in ("1", "2") and load_path.endswith(".ort"):
-            so.add_session_config_entry("session.use_ort_model_bytes_directly", "1")
-            so.add_session_config_entry("session.disable_prepacking", "1")
-            disable_prepack = True
-            if use_model_bytes == "2":
-                so.add_session_config_entry(
-                    "session.use_ort_model_bytes_for_initializers", "1"
-                )
-        if os.environ.get("TTS_ORT_MMAP", "0") == "1" and load_path.endswith(".ort"):
-            so.add_session_config_entry("session.use_memory_mapped_ort_model", "1")
-
-        so.intra_op_num_threads = max(1, int(num_threads))
-        so.inter_op_num_threads = 1
-        so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-        log.info(
-            "[tts] melo SessionOptions: cpu_arena=%s mem_pattern=%s "
-            "disable_prepacking=%s load=%s use_model_bytes=%s",
-            so.enable_cpu_mem_arena,
-            so.enable_mem_pattern,
-            disable_prepack,
-            load_path,
-            use_model_bytes,
-        )
-        if use_model_bytes in ("1", "2") and load_path.endswith(".ort"):
-            with open(load_path, "rb") as f:
-                self._ort_model_bytes = f.read()
-            self._sess = ort.InferenceSession(
-                self._ort_model_bytes, sess_options=so, providers=providers
-            )
-        else:
-            # Path load (also resolves external .data beside the model).
-            self._sess = ort.InferenceSession(
-                load_path, sess_options=so, providers=providers
-            )
-        self._ort = ort
-        model_path = load_path  # for size log below
-        active = self._sess.get_providers()
-        hw = (hw_provider or "").lower()
-        want_gpu = hw in ("cuda", "tensorrt", "trt")
-        has_gpu = (
-            "CUDAExecutionProvider" in active
-            or "TensorrtExecutionProvider" in active
-        )
-        if want_gpu and not has_gpu:
-            require = os.environ.get("TTS_REQUIRE_CUDA", "1") == "1"
-            msg = f"[tts] melo_openepd: providers={active} (wanted GPU)"
-            if require:
-                raise RuntimeError(msg)
-            log.warning(msg)
-
-        model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
-        mem_after = _process_rss_mb()
-        log.info(
-            f"[tts] melo_openepd ORT loaded: model_dir={model_dir}, "
-            f"g2p_dir={g2p_dir}, model_size_mb={model_size_mb:.1f}, "
-            f"sr={self._model_sr}, openepd={openepd}, language={self._language}, "
-            f"providers={active}, rss_mb={mem_before:.1f}->{mem_after:.1f}"
-        )
-        _maybe_malloc_trim("after_melo_session_load")
-
-    def _synthesize_segment(self, text: str) -> bytes:
-        import os
-        import time
-
-        import numpy as np
-        import re
-
-        if not text or not text.strip():
-            return b""
-        profile = os.environ.get("TTS_PROFILE", "0") == "1"
-        t0 = time.perf_counter() if profile else 0.0
-
-        # Match Melo api.tts_to_file for ZH_MIX_EN
-        t = text
-        if self._language in ("EN", "ZH_MIX_EN"):
-            t = re.sub(r"([a-z])([A-Z])", r"\1 \2", t)
-
-        phone_ids, tone_ids = self._encode(
-            t,
-            self._symbols,
-            add_blank=self._add_blank,
-            language=self._language,
-        )
-        t_g2p = time.perf_counter() if profile else 0.0
-        if not phone_ids:
-            return b""
-
-        length_scale = 1.0 / self._speed if self._speed else 1.0
-        feed = {
-            "x": np.array([phone_ids], dtype=np.int64),
-            "x_lengths": np.array([len(phone_ids)], dtype=np.int64),
-            "tones": np.array([tone_ids], dtype=np.int64),
-            "sid": np.array([self._sid], dtype=np.int64),
-            "noise_scale": np.array([self._noise_scale], dtype=np.float32),
-            "length_scale": np.array([length_scale], dtype=np.float32),
-            "noise_scale_w": np.array([self._noise_scale_w], dtype=np.float32),
-        }
-        audio = np.asarray(_piper_run(self._sess, self._ort, feed)[0]).squeeze()
-        audio = audio.astype(np.float32)
-        t_ort = time.perf_counter() if profile else 0.0
-        samples = _resample_to_16k(audio, self._model_sr)
-        pcm = _float_samples_to_pcm16(samples)
-        if profile:
-            t1 = time.perf_counter()
-            log.info(
-                "[tts] melo_profile text_chars=%d phones=%d "
-                "g2p=%.3fs ort=%.3fs post=%.3fs total=%.3fs providers=%s",
-                len(t),
-                len(phone_ids),
-                t_g2p - t0,
-                t_ort - t_g2p,
-                t1 - t_ort,
-                t1 - t0,
-                self._sess.get_providers(),
-            )
-        return pcm
 
 
 class MatchaPhoneToneOrtAdapter(TTSAdapter):
@@ -1468,7 +579,6 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         hw_provider: str = "cuda",
         num_threads: int = 2,
         noise_scale: float = 0.667,
-        wetext_dir: str = "",
     ):
         import os
 
@@ -1526,7 +636,7 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
 
     def _synthesize_segment(self, text: str) -> bytes:
         import numpy as np
-        from utils.matcha_trt import crop_mel
+        from utils.matcha_ort import crop_mel
 
         packed = self._encode(
             text,
@@ -1559,281 +669,22 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         return _float_samples_to_pcm16(samples)
 
 
-class MatchaTRTAdapter(TTSAdapter):
-    """Matcha acoustic/Vocos TensorRT. PhoneTone pack uses V1 frontend; kai uses WeText+lexicon."""
-
-    def __init__(
-        self,
-        model_dir: str,
-        speaker_id: int = 0,
-        speed: float = 1.0,
-        model_name: str = "tts_matcha_kai",
-        hw_provider: str = "cuda",
-        num_threads: int = 2,
-        noise_scale: float = 0.667,
-        wetext_dir: str = "",
-    ):
-        import os
-
-        from utils.matcha_text_frontend import MatchaTextFrontend
-        from utils.matcha_trt import (
-            AcousticTRT,
-            load_lexicon,
-            load_tokens,
-            resolve_acoustic_engine,
-        )
-        from utils.model_downloader import ensure_model
-        from utils.vocos_trt import VocosTRT, WaveformTRT, _Cudart
-
-        ensure_model(model_name, model_dir)
-        if not (model_name == "tts_matcha_gentleman" or os.path.isfile(os.path.join(model_dir, "bigvgan.onnx"))):
-            ensure_model("tts_vocoder", model_dir)
-        if wetext_dir:
-            try:
-                ensure_model("tts_wetext", wetext_dir)
-            except Exception as e:
-                log.warning("[tts] WeText JuiceFS load skipped: %s", e)
-
-        mem_before = _process_rss_mb()
-        self._sid = speaker_id
-        self._speed = speed
-        self._noise_scale = float(noise_scale)
-        self.max_segment_chars = MAX_SEGMENT_CHARS
-        self.text_normalize = False
-        self._hw_provider = hw_provider
-        self._num_threads = num_threads
-        from utils.phonetone import PhoneToneFrontend, is_phonetone_dir
-
-        self._phonetone = is_phonetone_dir(model_dir) or model_name == "tts_matcha_gentleman"
-        tokens_path = os.path.join(model_dir, "tokens.txt")
-        lexicon_path = os.path.join(model_dir, "lexicon.txt")
-        vocoder = (
-            _phonetone_vocoder_path(model_dir)
-            if self._phonetone
-            else os.path.join(model_dir, "vocos-16khz-univ.onnx")
-        )
-        cache = os.environ.get("TTS_VOCOS_TRT_CACHE", "/opt/vocos_trt_cache")
-        matcha_cache = os.environ.get("TTS_MATCHA_TRT_CACHE", "/opt/matcha_trt_cache")
-        engine = resolve_acoustic_engine(matcha_cache)
-        load_order = os.environ.get("TTS_TRT_LOAD_ORDER", "trt_first").strip()
-        self._engine_path = engine
-        self._vocoder_path = vocoder
-        self._vocos_cache = cache
-        self._load_order = load_order
-        self._cudart = _Cudart()
-        self._use_bigvgan = self._phonetone and os.path.basename(vocoder) == "bigvgan.onnx"
-        self._acoustic = None
-        self._vocos = None
-        self._frontend = None
-        self._tok2id = {}
-        self._lex = {}
-
-        def _load_frontend():
-            self._frontend = (
-                PhoneToneFrontend(model_dir)
-                if self._phonetone
-                else MatchaTextFrontend(wetext_dir or None)
-            )
-            self._tok2id = {} if self._phonetone else load_tokens(tokens_path)
-            self._lex = (
-                {}
-                if self._phonetone
-                else (load_lexicon(lexicon_path) if os.path.isfile(lexicon_path) else {})
-            )
-            _dump_stage("after_frontend")
-
-        def _load_acoustic():
-            if self._acoustic is None:
-                self._acoustic = AcousticTRT(self._engine_path, self._cudart)
-                _dump_stage("after_matcha_engine")
-
-        def _load_vocoder():
-            if self._vocos is None:
-                if self._use_bigvgan:
-                    bigvgan_eng = os.environ.get("TTS_BIGVGAN_TRT_ENGINE", "").strip()
-                    if not bigvgan_eng:
-                        from pathlib import Path
-
-                        cache = Path(os.environ.get("TTS_BIGVGAN_TRT_CACHE", self._vocos_cache))
-                        found = sorted(cache.glob("bigvgan.trt8.5*.cmpf32.engine"))
-                        bigvgan_eng = str(found[-1]) if found else ""
-                    if bigvgan_eng:
-                        self._vocos = WaveformTRT(bigvgan_eng, cudart=self._cudart)
-                        _dump_stage("after_bigvgan_engine")
-                    else:
-                        self._vocos = _WaveformOrt(
-                            self._vocoder_path, self._hw_provider, self._num_threads
-                        )
-                        _dump_stage("after_bigvgan_session")
-                else:
-                    self._vocos = VocosTRT(
-                        self._vocoder_path, self._vocos_cache, cudart=self._cudart
-                    )
-                    _dump_stage("after_vocos_engine")
-
-        self._load_acoustic = _load_acoustic
-        self._load_vocoder = _load_vocoder
-        if load_order == "measure_gentleman":
-            # PhoneTone -> encode -> Matcha engine -> Matcha run -> BigVGAN -> vocoder run
-            _load_frontend()
-        elif load_order == "frontend_first":
-            _load_frontend()
-            _load_acoustic()
-            _load_vocoder()
-        else:
-            _load_acoustic()
-            _load_vocoder()
-            import gc
-
-            gc.collect()
-            _load_frontend()
-        self._model_sr = 16000
-        mem_after = _process_rss_mb()
-        log.info(
-            "[tts] Matcha TRT loaded: model_dir=%s engine=%s wetext=%s "
-            "speaker_id=%s speed=%s noise_scale=%s load_order=%s "
-            "memory_mb=%.1f->%.1f",
-            model_dir,
-            engine,
-            self._frontend.has_wetext if self._frontend is not None else None,
-            speaker_id,
-            speed,
-            noise_scale,
-            load_order,
-            mem_before,
-            mem_after,
-        )
-
-    def split_text(self, text: str) -> list[str]:
-        text = self._frontend.normalize(text)
-        return _split_utterance(self, text)
-
-    def _synthesize_segment(self, text: str) -> bytes:
-        import numpy as np
-        from utils.matcha_trt import crop_mel, pad_token_ids, text_to_ids
-
-        if self._phonetone:
-            from utils.phonetone import encode_for_matcha
-
-            enc = encode_for_matcha(text, temperature=self._noise_scale, length_scale=1.0 / max(self._speed, 1e-6))
-            feeds = {
-                "x": enc["x"],
-                "x_lengths": enc["x_lengths"],
-                "tones": enc["tones"],
-                "languages": enc["languages"],
-                "scales": enc["scales"],
-            }
-            real_len = int(enc["real_len"])
-            _dump_stage("after_encode")
-        else:
-            ids, phones, skipped, missing = text_to_ids(text, self._lex, self._tok2id)
-            ids, real_len = pad_token_ids(ids, self._tok2id)
-            if real_len < 1:
-                log.warning("[tts] TRT skip empty tokens text=%r skipped=%s", text, skipped)
-                return b""
-            if skipped or missing:
-                log.info(
-                    "[tts] TRT g2p skipped=%s missing=%s phones=%s",
-                    skipped[:20],
-                    missing[:20],
-                    " ".join(phones[:24]),
-                )
-            feeds = {
-                "x": np.asarray(ids, np.int32)[None, :],
-                "x_length": np.asarray([real_len], np.int32),
-                "noise_scale": np.asarray([self._noise_scale], np.float32),
-            }
-        self._load_acoustic()
-        ac_out = self._acoustic.infer(feeds)
-        _dump_stage("after_matcha_infer")
-        mel = ac_out.get("mel")
-        if mel is None:
-            raise RuntimeError("no mel in %s" % list(ac_out))
-        cropped = crop_mel(mel, real_len, ac_out.get("mel_lengths"))
-        self._load_vocoder()
-        samples = self._vocos.infer(
-            np.ascontiguousarray(cropped[None, ...], dtype=np.float32)
-        )
-        _dump_stage("after_vocoder_infer")
-        samples = _resample_to_16k(samples, self._model_sr)
-        return _float_samples_to_pcm16(samples)
-
-
 def _build_tts_adapter(cfg: dict) -> TTSAdapter:
-    model_dir = cfg.get("model_dir", "/models/sherpa-onnx/tts")
-    speaker_id = int(cfg.get("speaker_id", 0))
-    speed = float(cfg.get("speed", 1.0))
-    backend = cfg.get("backend", "vits")
-    if backend == "piper":
-        adapter = PiperDualG2PTTSAdapter(
-            model_dir,
-            speaker_id,
-            speed,
-            model_name=cfg.get("model_name", "tts_piper_b2"),
-            hw_provider=cfg.get("hw_provider", "cpu"),
-            num_threads=int(cfg.get("num_threads", 2)),
-            noise_scale=float(cfg.get("noise_scale", 0.667)),
-            noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
-        )
-    elif backend == "melo_openepd":
-        adapter = MeloOpenEpdOrtTTSAdapter(
-            model_dir,
-            speaker_id,
-            speed,
-            model_name=cfg.get("model_name", "tts_melo_openepd_fp32"),
-            hw_provider=cfg.get("hw_provider", "cpu"),
-            num_threads=int(cfg.get("num_threads", 2)),
-            noise_scale=float(cfg.get("noise_scale", 0.6)),
-            noise_scale_w=float(cfg.get("noise_scale_w", 0.8)),
-            g2p_model_name=cfg.get("g2p_model_name", "tts_melo_openepd_g2p"),
-            g2p_dir=cfg.get("g2p_dir", "/models/melo-openepd-g2p-assets"),
-        )
-    elif backend == "kokoro":
-        adapter = SherpaOnnxKokoroTTSAdapter(
-            model_dir,
-            speaker_id,
-            speed,
-            model_name=cfg.get("model_name", "tts_kokoro_int8"),
-            hw_provider=cfg.get("hw_provider", "cpu"),
-            num_threads=int(cfg.get("num_threads", 2)),
-        )
-    elif backend == "vits":
-        adapter = SherpaOnnxVitsTTSAdapter(
-            model_dir,
-            speaker_id,
-            speed,
-            model_name=cfg.get("model_name", "tts_melo_8k"),
-            hw_provider=cfg.get("hw_provider", "cpu"),
-            num_threads=int(cfg.get("num_threads", 2)),
-        )
-    elif backend == "matcha":
-        import os
-
-        trt_kw = dict(
-            model_dir=model_dir,
-            speaker_id=speaker_id,
-            speed=speed,
-            model_name=cfg.get("model_name", "tts_matcha_kai"),
-            hw_provider=cfg.get("hw_provider", "cpu"),
-            num_threads=int(cfg.get("num_threads", 2)),
-            noise_scale=float(cfg.get("noise_scale", 0.667)),
-            wetext_dir=str(cfg.get("wetext_dir", "") or ""),
-        )
-        phonetone = (
-            str(cfg.get("model_name", "")).endswith("gentleman")
-            or os.path.isfile(os.path.join(model_dir, "frontend_release", "opencpop-strict.txt"))
-        )
-        if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
-            adapter = MatchaTRTAdapter(**trt_kw)
-        elif phonetone:
-            adapter = MatchaPhoneToneOrtAdapter(**trt_kw)
-        else:
-            adapter = SherpaOnnxTTSAdapter(**trt_kw)
-    else:
-        raise ValueError(f"unknown tts backend: {backend}")
+    backend = cfg.get("backend", "matcha")
+    if backend != "matcha":
+        raise ValueError("Gentleman image only supports backend=matcha, got %r" % backend)
+    adapter = MatchaPhoneToneOrtAdapter(
+        model_dir=cfg.get("model_dir", "/models/matcha-gentleman-phonetone-16k"),
+        speaker_id=int(cfg.get("speaker_id", 0)),
+        speed=float(cfg.get("speed", 1.0)),
+        model_name=cfg.get("model_name", "tts_matcha_gentleman"),
+        hw_provider=cfg.get("hw_provider", "cuda"),
+        num_threads=int(cfg.get("num_threads", 2)),
+        noise_scale=float(cfg.get("noise_scale", 0.667)),
+    )
     adapter.max_segment_chars = int(cfg.get("max_segment_chars", MAX_SEGMENT_CHARS))
     adapter.prefer_single_pass = bool(cfg.get("prefer_single_pass", True))
-    adapter.text_normalize = bool(cfg.get("text_normalize", True))
+    adapter.text_normalize = False
     return adapter
 
 
@@ -2123,22 +974,6 @@ def _run_tts_warmup(adapter: TTSAdapter, plugin_cfg: dict) -> None:
                 drop_file_pages(path)
     except Exception as e:
         log.warning(f"[tts] warmup failed (non-fatal): {e}", exc_info=True)
-        if os.environ.get("TTS_MATCHA_TRT", "0") == "1":
-            print("FULLSTACK_INFER_FAILED %s" % e, flush=True)
-    try:
-        if os.environ.get("TTS_MATCHA_TRT", "0") == "1" or os.environ.get(
-            "TTS_DUMP_CGROUP", "0"
-        ) == "1":
-            from utils.matcha_trt import dump_fullstack_peak
-
-            dump_fullstack_peak("after_warmup" if infer_ok else "warmup_failed")
-    except Exception as e:
-        log.warning("[tts] cgroup dump failed: %s", e)
-        print(
-            "FULLSTACK_PEAK tag=%s cgroup_usage_MB=NA cgroup_max_MB=NA"
-            % ("after_warmup" if infer_ok else "warmup_failed"),
-            flush=True,
-        )
 
 
 def _start_warmup_background(adapter: TTSAdapter, plugin_cfg: dict) -> None:
@@ -2175,11 +1010,13 @@ class TTSPlugin:
         self._instance_configs: dict[str, dict] = {}
         self._executor = executor
         log.info(
-            f"[tts] plugin init: sherpa-onnx {plugin_cfg.get('backend', 'vits')}, "
-            f"speaker_id={plugin_cfg.get('speaker_id', 0)}, "
-            f"speed={plugin_cfg.get('speed', 1.0)}, "
-            f"max_segment_chars={plugin_cfg.get('max_segment_chars', MAX_SEGMENT_CHARS)}, "
-            f"realtime_pacing={self._realtime_pacing}"
+            "[tts] plugin init: gentleman-ort backend=%s speaker_id=%s speed=%s "
+            "max_segment_chars=%s realtime_pacing=%s",
+            plugin_cfg.get("backend", "matcha"),
+            plugin_cfg.get("speaker_id", 0),
+            plugin_cfg.get("speed", 1.0),
+            plugin_cfg.get("max_segment_chars", MAX_SEGMENT_CHARS),
+            self._realtime_pacing,
         )
 
     def get_tools(self) -> list:
@@ -2374,3 +1211,4 @@ class TTSPlugin:
         if not self._adapter:
             raise RuntimeError("TTS adapter not configured")
         return self._adapter.synthesize(text)
+

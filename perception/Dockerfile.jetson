@@ -1,146 +1,92 @@
-# ── Jetson GPU variant (leaderboard-aligned) ─────────────────────────
+# ── Jetson Gentleman TTS (Matcha + BigVGAN Python ORT) ───────────
 # Base from company TCR (JP5.1.1 or JP6.1):
 #   bj-warehouse.tencentcloudcr.com/phanthy-motus/jetson-base:jp${JP_VERSION}-torch
 #
-# Leaderboard / local build (repo root as context):
-#   docker build -f perception/Dockerfile.jetson --build-arg JP_VERSION=61 \
-#     -t phanthymotus-perception-tts:jp61 .
 #   docker build -f perception/Dockerfile.jetson --build-arg JP_VERSION=511 \
 #     -t phanthymotus-perception-tts:jp511 .
+#   docker build -f perception/Dockerfile.jetson --build-arg JP_VERSION=61 \
+#     -t phanthymotus-perception-tts:jp61 .
 #
-# Or: ./deploy/build_perception.sh --variant jetson --jp-version 6.1
+# Runtime is Gentleman-only: jieba/pypinyin + onnxruntime-gpu CUDA EP.
+# No sherpa-onnx, Melo, Piper, TensorRT, g2p-en, nltk, wetext, scipy.
 # ────────────────────────────────────────────────────────────────────
 
 ARG PYPI_MIRROR=https://pypi.tuna.tsinghua.edu.cn/simple/
 ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
-# 61 = JP6.1 (current test boxes); 511 = JP5.1.1
 ARG JP_VERSION=61
 FROM bj-warehouse.tencentcloudcr.com/phanthy-motus/jetson-base:jp${JP_VERSION}-torch
 ARG PYPI_MIRROR APT_MIRROR JP_VERSION
-# TTS-only Jetson builds can skip heavy VOP (ultralytics/CLIP). Leaderboard TTS OK.
 ARG SKIP_VOP_DEPS=ON
+ARG JUICEFS_TTS=http://172.28.4.81:34567/fanyi/phanthymotus_tts
 
-# jp6 base often sets PIP_INDEX_URL=jetson.webredirect.org (unreachable here).
 ENV PIP_INDEX_URL=${PYPI_MIRROR} \
     PIP_EXTRA_INDEX_URL= \
     PIP_TRUSTED_HOST="mirrors.tuna.tsinghua.edu.cn pypi.tuna.tsinghua.edu.cn pypi.org files.pythonhosted.org"
 
-# ── APT mirror (conditional) ─────────────────────────────────────
 RUN if [ -n "${APT_MIRROR}" ]; then \
         sed -i "s/archive.ubuntu.com/${APT_MIRROR}/g; s/ports.ubuntu.com/${APT_MIRROR}/g" /etc/apt/sources.list; \
     fi
 
-# ── Switch ROS2 to TUNA mirror + skip expired key (if sources exist) ──
 RUN if ls /etc/apt/sources.list.d/*.list 1>/dev/null 2>&1; then \
         sed -i 's|http://packages.ros.org/ros2/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu|g' /etc/apt/sources.list.d/*.list && \
         sed -i 's|deb \[|deb [trusted=yes |g; s|deb http|deb [trusted=yes] http|g' /etc/apt/sources.list.d/ros2*.list; \
     fi
 
-# ── System deps ────────────────────────────────────────────────────
+# cmake/g++/python3-dev: only to colcon-build audio_msgs, then purged.
 RUN rm -f /etc/apt/sources.list.d/* && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/* && \
     apt-get -o Acquire::AllowInsecureRepositories=true update && \
     apt-get install -y --no-install-recommends --allow-unauthenticated \
-        ffmpeg git cmake g++ python3-dev wget ca-certificates && \
+        cmake g++ python3-dev wget ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} colcon-common-extensions && \
     pip3 install --no-cache-dir -i ${PYPI_MIRROR} "empy<4"
 
-# ── audio_msgs ROS2 package (Humble already in base) ──────────────
 COPY deploy/ros-base/audio_msgs/ /ros_ws/src/audio_msgs/
 RUN cd /ros_ws && \
     . /opt/ros/humble/install/setup.bash && \
-    colcon build --packages-select audio_msgs --cmake-args -DCMAKE_BUILD_TYPE=Release
+    colcon build --packages-select audio_msgs --cmake-args -DCMAKE_BUILD_TYPE=Release && \
+    apt-get -o Acquire::AllowInsecureRepositories=true update && \
+    apt-get purge -y --auto-remove cmake g++ python3-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.cache
 
-# ── Python deps ────────────────────────────────────────────────────
-# --ignore-installed: JP5 base PyYAML is distutils; pip cannot uninstall it.
+# Gentleman PhoneTone + ROS MCP. --ignore-installed: JP5 base PyYAML is distutils.
 RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
     --ignore-installed pyyaml requests websockets webrtcvad websocket-client dashscope psutil \
-    wetext kaldifst jieba pypinyin unidecode cn2an inflect g2p-en nltk "onnx>=1.12,<1.17" && \
-    pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} silero-vad
+    kaldifst jieba pypinyin unidecode
 
-# ── HTMSG deps (KISS-ICP + future semantic) ──────────────────────
-RUN pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
-    kiss-icp scipy
-
-# ── VOP deps (optional) ──────────────────────────────────────────
-RUN if [ "${SKIP_VOP_DEPS}" = "ON" ]; then \
-      echo "SKIP_VOP_DEPS=ON, skipping ultralytics/CLIP"; \
-    else \
-      python3 -c "import cv2" 2>/dev/null || { \
-        PYTAG=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"); \
-        CV2PKG="/usr/lib/python${PYTAG}/dist-packages/cv2"; \
-        echo 'import importlib.util, sys, os' > "${CV2PKG}/__init__.py" && \
-        echo "_so = os.path.join(os.path.dirname(__file__), f'python-{PYTAG}', f'cv2.cpython-{PYTAG.replace(\".\", \"\")}-aarch64-linux-gnu.so')" >> "${CV2PKG}/__init__.py" && \
-        echo '_spec = importlib.util.spec_from_file_location("cv2", _so)' >> "${CV2PKG}/__init__.py" && \
-        echo '_mod = importlib.util.module_from_spec(_spec)' >> "${CV2PKG}/__init__.py" && \
-        echo '_spec.loader.exec_module(_mod)' >> "${CV2PKG}/__init__.py" && \
-        echo 'sys.modules["cv2"] = _mod' >> "${CV2PKG}/__init__.py"; \
-      }; \
-      pip3 install --no-cache-dir --no-deps -i ${PYPI_MIRROR} ultralytics && \
-      pip3 install --no-cache-dir -i ${PYPI_MIRROR} \
-        matplotlib pandas tqdm "pillow>=7.1.2" py-cpuinfo \
-        "ultralytics-thop>=0.2.7" "seaborn>=0.11.0" && \
-      pip3 uninstall -y opencv-python opencv-python-headless 2>/dev/null; true && \
-      pip3 install --no-cache-dir -i ${PYPI_MIRROR} --no-deps \
-        "git+https://ghfast.top/https://github.com/ultralytics/CLIP.git" && \
-      pip3 install --no-cache-dir -i ${PYPI_MIRROR} ftfy regex && \
-      mkdir -p /work/weights/clip && \
-      python3 -c "import urllib.request; urllib.request.urlretrieve('https://agi-phanthy-dev-1252788780.cos.ap-beijing.myqcloud.com/public/ViT-B-32.pt', '/work/weights/clip/ViT-B-32.pt')"; \
-    fi
-
-ENV YOLO_CONFIG_DIR=/work
-
-# ── sherpa-onnx CUDA: official prebuilt wheels (do not compile on eval boxes) ──
-# JP5.1.1 = CUDA 11.4 / cp38; JP6.1 = CUDA 12 / cp310. Compiling with ORT 1.18.1
-# is JP6-only and fails cmake on JP5. Wheels match 4paradigm/phanthymotus.
-# COS key keeps the JetPack directory; filename '+' must stay literal for pip.
-ARG SHERPA_GPU_WHEEL_511=jp511/sherpa_onnx-1.13.6+cuda-cp38-cp38-linux_aarch64.whl
-ARG SHERPA_GPU_WHEEL_61=jp61/sherpa_onnx-1.13.6+cuda-cp310-cp310-linux_aarch64.whl
+# Bake onnxruntime-gpu into the image (do not pip-install at container start).
+# JP5.1.1 = cp38 / ORT 1.16.3; JP6.1 = cp310 / ORT 1.23.0.
 RUN set -eux; \
     case "${JP_VERSION}" in \
-      511) WHEEL="${SHERPA_GPU_WHEEL_511}" ;; \
-      61) WHEEL="${SHERPA_GPU_WHEEL_61}" ;; \
+      511) ORT_WHL="onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl" ;; \
+      61)  ORT_WHL="onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl" ;; \
       *) echo "unsupported JP_VERSION=${JP_VERSION}"; exit 1 ;; \
     esac; \
-    FILE="$(basename "${WHEEL}")"; \
-    echo "[build] sherpa-onnx GPU wheel jp${JP_VERSION}: ${WHEEL}"; \
-    python3 -c "import urllib.request, urllib.parse, sys; key, dest = sys.argv[1], sys.argv[2]; urllib.request.urlretrieve('https://agi-phanthy-dev-1252788780.cos.ap-beijing.myqcloud.com/public/sherpa-onnx/' + urllib.parse.quote(key), dest)" \
-      "${WHEEL}" "/tmp/${FILE}"; \
-    pip3 install --no-cache-dir "/tmp/${FILE}"; \
-    rm -f "/tmp/${FILE}"; \
-    python3 -c "import sherpa_onnx, pathlib; lib = pathlib.Path(sherpa_onnx.__file__).parent / 'lib' / 'libonnxruntime_providers_cuda.so'; assert lib.is_file(), 'CUDA provider missing from the installed wheel'; print('sherpa-onnx', sherpa_onnx.__version__, 'with CUDA provider')"
+    python3 -c "import urllib.request, sys; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])" \
+      "${JUICEFS_TTS}/${ORT_WHL}" "/tmp/${ORT_WHL}"; \
+    pip3 install --no-cache-dir "/tmp/${ORT_WHL}"; \
+    rm -f "/tmp/${ORT_WHL}"; \
+    python3 -c "import onnxruntime as ort; assert 'CUDAExecutionProvider' in ort.get_available_providers(), ort.get_available_providers(); print('onnxruntime', ort.__version__, ort.get_available_providers())"
 
-# Melo OpenEPD english.g2p needs NLTK data at runtime
-ENV NLTK_DATA=/usr/share/nltk_data
-RUN mkdir -p /usr/share/nltk_data && \
-    python3 -c "import nltk; \
-nltk.download('cmudict', download_dir='/usr/share/nltk_data'); \
-nltk.download('averaged_perceptron_tagger', download_dir='/usr/share/nltk_data'); \
-nltk.download('averaged_perceptron_tagger_eng', download_dir='/usr/share/nltk_data')" || \
-    echo "WARN: nltk download failed at build time"
-
-# ── Application code ───────────────────────────────────────────────
 WORKDIR /work
 COPY perception/main.py /work/main.py
 COPY perception/plugins/ /work/plugins/
 COPY perception/utils/ /work/utils/
-COPY perception/melo_g2p_slim/ /work/melo_g2p_slim/
 COPY perception/config.yaml /work/config.yaml
-COPY perception/deploy/ /deploy/
+COPY perception/deploy/entrypoint.sh /deploy/entrypoint.sh
 COPY deploy/judgeflow_tts_run.sh /deploy/judgeflow_tts_run.sh
 RUN chmod 755 /deploy/entrypoint.sh /deploy/judgeflow_tts_run.sh && \
-    mkdir -p /opt/vocos_trt_cache
+    rm -f /work/utils/matcha_trt.py /work/utils/vocos_trt.py && \
+    find /work /deploy -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 EXPOSE 15720
 EXPOSE 15721
 
 ENV NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    TTS_MATCHA_TRT=0
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 LABEL com.nvidia.volumes.needed="nvidia_driver"
 
-# PYTHONPATH for ROS packages (python version differs JP5 vs JP6)
 RUN SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") && \
     find /ros_ws/install -name "site-packages" -type d > "${SITE}/ros_ws.pth" && \
     (find /opt/ros/humble/install -name "site-packages" -type d >> "${SITE}/ros_ws.pth" 2>/dev/null || true)

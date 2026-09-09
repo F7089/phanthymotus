@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# Canonical docker run for TTS leaderboard on Jetson (GPU required).
+# Canonical docker run for Gentleman TTS leaderboard on Jetson (GPU required).
 #
-# Ranking: git clone this repo, models from the data disk (/models).
-# Gentleman PhoneTone: TTS_MATCHA_TRT=0, Matcha/BigVGAN Python ORT CUDA.
-# Do not require kai Vocos/Matcha TRT engines for this pack.
-#
-# judgeflow reference service should call this script (or equivalent flags)
-# instead of plain: docker run --privileged --network=host ...
+# Matcha + BigVGAN Python ORT CUDA. No sherpa, no TensorRT engines.
 #
 # Usage:
 #   ./deploy/judgeflow_tts_run.sh <image> <container_name> <mcp_port> <ws_port>
-#
-# Example (instance 0):
-#   ./deploy/judgeflow_tts_run.sh phanthymotus-perception-tts:e19aee0 \
-#     phanthymotus-perception-tts-0 15720 15721
 set -euo pipefail
 
 IMAGE="${1:?image required}"
@@ -23,54 +14,6 @@ WS_PORT="${4:?WS_PORT required}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 docker rm -f "${NAME}" >/dev/null 2>&1 || true
-
-pick_host_dir() {
-  local d
-  for d in "$@"; do
-    if [[ -n "$d" && -d "$d" ]]; then
-      printf '%s' "$d"
-      return 0
-    fi
-  done
-  return 1
-}
-
-MATCHA_CACHE_HOST="${TTS_MATCHA_TRT_CACHE_HOST:-}"
-if [[ -z "$MATCHA_CACHE_HOST" ]]; then
-  MATCHA_CACHE_HOST="$(pick_host_dir /models/matcha_trt_cache /tmp/matcha_trt_cache || true)"
-  MATCHA_CACHE_HOST="${MATCHA_CACHE_HOST:-/tmp/matcha_trt_cache}"
-fi
-VOCOS_CACHE_HOST="${TTS_VOCOS_TRT_CACHE_HOST:-}"
-if [[ -z "$VOCOS_CACHE_HOST" ]]; then
-  VOCOS_CACHE_HOST="$(pick_host_dir /models/vocos_trt_cache /tmp/vocos_trt_cache || true)"
-  VOCOS_CACHE_HOST="${VOCOS_CACHE_HOST:-/tmp/vocos_trt_cache}"
-fi
-mkdir -p "${MATCHA_CACHE_HOST}" "${VOCOS_CACHE_HOST}"
-
-# Gentleman ranking is PhoneTone ORT CUDA on JP5 and JP6.
-# kai Matcha+Vocos TRT is opt-in: TTS_MATCHA_TRT=1 plus host engines.
-TTS_MATCHA_TRT="${TTS_MATCHA_TRT:-0}"
-ACOUSTIC_HOST="${TTS_MATCHA_TRT_ENGINE_HOST:-}"
-if [[ -z "$ACOUSTIC_HOST" ]]; then
-  ACOUSTIC_HOST="$(ls -1t "${MATCHA_CACHE_HOST}"/model-steps-3.trt8.5*.cmpf32.engine 2>/dev/null | head -1 || true)"
-fi
-VOCOS_HOST="${TTS_VOCOS_TRT_ENGINE_HOST:-}"
-if [[ -z "$VOCOS_HOST" ]]; then
-  VOCOS_HOST="$(ls -1t "${VOCOS_CACHE_HOST}"/vocos-16khz-univ*.engine 2>/dev/null | head -1 || true)"
-fi
-
-if [[ "$TTS_MATCHA_TRT" == "1" ]]; then
-  if [[ -z "$ACOUSTIC_HOST" || ! -f "$ACOUSTIC_HOST" ]]; then
-    echo "FATAL: TTS_MATCHA_TRT=1 but no cmpf32 engine." >&2
-    echo "  expected ${MATCHA_CACHE_HOST}/model-steps-3.trt8.5*.cmpf32.engine" >&2
-    echo "  (JP5 trtexec, default tactics; do not use tacticSources/preview plans)" >&2
-    exit 1
-  fi
-  if [[ -z "$VOCOS_HOST" || ! -f "$VOCOS_HOST" ]]; then
-    echo "FATAL: TTS_MATCHA_TRT=1 but no Vocos engine in ${VOCOS_CACHE_HOST}" >&2
-    exit 1
-  fi
-fi
 
 RUN_ARGS=(
     docker run -d
@@ -82,26 +25,16 @@ RUN_ARGS=(
     -e NVIDIA_DRIVER_CAPABILITIES=compute,utility
     -e MCP_PORT="${MCP_PORT}"
     -e WS_PORT="${WS_PORT}"
-    -e TTS_MATCHA_TRT="${TTS_MATCHA_TRT}"
     -e TTS_RANKING_MODE="${TTS_RANKING_MODE:-0}"
-    -v "${VOCOS_CACHE_HOST}:/opt/vocos_trt_cache"
-    -v "${MATCHA_CACHE_HOST}:/opt/matcha_trt_cache"
+    -e TTS_REQUIRE_CUDA=1
 )
-
-if [[ "$TTS_MATCHA_TRT" == "1" ]]; then
-  RUN_ARGS+=(
-    -e "TTS_MATCHA_TRT_ENGINE=/opt/matcha_trt_cache/$(basename "$ACOUSTIC_HOST")"
-    -e "TTS_VOCOS_TRT_ENGINE=/opt/vocos_trt_cache/$(basename "$VOCOS_HOST")"
-  )
-fi
 
 # Git checkout overrides the image /work copies so ranking can git pull
 # without rebuilding phanthymotus-perception-tts.
 if [[ -f "$ROOT/perception/plugins/tts.py" ]]; then
   RUN_ARGS+=(
     -v "$ROOT/perception/plugins/tts.py:/work/plugins/tts.py:ro"
-    -v "$ROOT/perception/utils/matcha_trt.py:/work/utils/matcha_trt.py:ro"
-    -v "$ROOT/perception/utils/vocos_trt.py:/work/utils/vocos_trt.py:ro"
+    -v "$ROOT/perception/utils/matcha_ort.py:/work/utils/matcha_ort.py:ro"
     -v "$ROOT/perception/utils/model_downloader.py:/work/utils/model_downloader.py:ro"
     -v "$ROOT/perception/utils/phonetone:/work/utils/phonetone:ro"
     -v "$ROOT/perception/config.yaml:/work/config.yaml:ro"
@@ -112,23 +45,10 @@ if [[ -f "$ROOT/perception/deploy/entrypoint.sh" ]]; then
   RUN_ARGS+=(-v "$ROOT/perception/deploy/entrypoint.sh:/deploy/entrypoint.sh:ro")
 fi
 
-# Optional host model cache (if mounted on eval Jetson)
 if [ -d /models ]; then
     RUN_ARGS+=(-v /models:/models)
 fi
 
-ORT_WHEEL_HOST="${TTS_ORT_WHEEL_HOST:-}"
-if [[ -z "$ORT_WHEEL_HOST" ]]; then
-  ORT_WHEEL_HOST="$(ls -1t \
-    /models/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl \
-    /home/develop/fanyi/wheels/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl \
-    2>/dev/null | head -1 || true)"
-fi
-if [[ -n "${ORT_WHEEL_HOST}" && -f "${ORT_WHEEL_HOST}" ]]; then
-  RUN_ARGS+=(-v "${ORT_WHEEL_HOST}:/opt/wheels/$(basename "$ORT_WHEEL_HOST"):ro")
-fi
-
-# ROS_DOMAIN_ID / FASTDDS: set by judgeflow at docker run (not baked into image).
 if [ -n "${ROS_DOMAIN_ID:-}" ]; then
     RUN_ARGS+=(-e "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}")
 fi
@@ -138,6 +58,5 @@ fi
 
 RUN_ARGS+=("${IMAGE}")
 
-echo "[judgeflow_tts_run] TTS_MATCHA_TRT=${TTS_MATCHA_TRT} acoustic=${ACOUSTIC_HOST:-} vocos=${VOCOS_HOST:-}"
-echo "[judgeflow_tts_run] ${RUN_ARGS[*]}"
+echo "[judgeflow_tts_run] gentleman-ort ${RUN_ARGS[*]}"
 "${RUN_ARGS[@]}"

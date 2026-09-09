@@ -19,7 +19,7 @@ plugins:
 
   tts:
     enabled: true
-    # Gentleman PhoneTone V1: jieba + ToneSandhi + 94 phone. Not kai lexicon.
+    # Gentleman PhoneTone V1: jieba + ToneSandhi + 94 phone. Matcha + BigVGAN ORT.
     backend: matcha
     model_name: tts_matcha_gentleman
     model_dir: /models/matcha-gentleman-phonetone-16k
@@ -28,7 +28,6 @@ plugins:
     speaker_id: 0
     speed: 1.0
     text_normalize: false
-    wetext_dir: ""
     max_segment_chars: 35
     prefer_single_pass: true
     warmup: true

@@ -1,5 +1,5 @@
 """
-utils/model_downloader.py — Auto-download sherpa-onnx models from COS if missing.
+utils/model_downloader.py — Fetch Gentleman Matcha pack from JuiceFS if missing.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from urllib.request import urlretrieve
 
 log = logging.getLogger(__name__)
 
-COS_BASE = "https://agi-phanthy-dev-1252788780.cos.ap-beijing.myqcloud.com/public"
 JUICEFS_BASE = "http://172.28.4.81:34567/fanyi/phanthymotus_tts"
 # Same JuiceFS data disk the tar lives on. Prefer this over HTTP when present.
 JUICEFS_LOCAL = os.environ.get("TTS_JUICEFS_DIR", "/mnt/data/fanyi/phanthymotus_tts")
@@ -34,135 +33,11 @@ def _progress_hook(name: str):
     return hook
 
 MODELS = {
-    "asr": {
-        "url": f"{COS_BASE}/sherpa-onnx-streaming-paraformer-bilingual-zh-en.zip",
-        "check_file": "tokens.txt",
-    },
-    "asr_en": {
-        "url": f"{COS_BASE}/sherpa-onnx-streaming-zipformer-en-2023-06-26.zip",
-        "check_file": "tokens.txt",
-    },
-    "asr_sensevoice": {
-        "url": f"{COS_BASE}/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.zip",
-        "check_file": "tokens.txt",
-    },
-    "tts": {
-        "url": f"{JUICEFS_BASE}/matcha-kai-16k-e500.tar.bz2",
-        "check_file": "model-steps-3.onnx",
-    },
-    "tts_matcha_kai": {
-        "url": f"{JUICEFS_BASE}/matcha-kai-16k-e500.tar.bz2",
-        "check_file": "model-steps-3.onnx",
-    },
-    "tts_matcha_lufeng": {
-        "url": f"{JUICEFS_BASE}/matcha-lufeng-16k-e500.tar.bz2",
-        "check_file": "model-steps-3.onnx",
-    },
     "tts_matcha_gentleman": {
         "url": f"{JUICEFS_BASE}/matcha-gentleman-phonetone-16k.tar.bz2",
         "check_file": "model-steps-3.onnx",
         # Ranking uses 3-step. Do not extract the 10-step graph into page cache.
         "skip_files": ("model-steps-10.onnx",),
-    },
-    # JP5 Python 3.8 ORT GPU wheel. Image vendors sherpa's ORT .so only.
-    "tts_ort_gpu_cp38": {
-        "url": f"{JUICEFS_BASE}/onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl",
-        "check_file": "onnxruntime_gpu-1.16.3-cp38-cp38-linux_aarch64.whl",
-        "single_file": True,
-    },
-    # WeText TN graphs (tagger+verbalizer). JuiceFS only — never git.
-    "tts_wetext": {
-        "url": f"{JUICEFS_BASE}/wetext.tar.bz2",
-        "check_file": "zh_tn_tagger.fst",
-    },
-    "tts_vocoder": {
-        "url": f"{JUICEFS_BASE}/vocos-16khz-univ.onnx",
-        "check_file": "vocos-16khz-univ.onnx",
-        "single_file": True,
-    },
-    # 8k Melo: longanlingxin pack (model.onnx + lexicon + dict)
-    "tts_melo_8k": {
-        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-8k.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    # Shared OpenEPD + Melo G2P large assets (pickle / tokens / vendor skeleton).
-    # Slim english.py lives in the git image (/work/melo_g2p_slim), NOT in this tar.
-    "tts_melo_openepd_g2p": {
-        "url": f"{JUICEFS_BASE}/melo-openepd-g2p-assets.tar.bz2",
-        "check_file": "openepd_eng_dict.pickle",
-    },
-    # OOV neural weights (numpy). JuiceFS only — never git.
-    "tts_melo_g2p_oov_ckpt": {
-        "url": f"{JUICEFS_BASE}/checkpoint20.npz",
-        "check_file": "checkpoint20.npz",
-        "single_file": True,
-    },
-    # Compact OpenEPD lexicon (mmap .oedb). JuiceFS only — never git.
-    "tts_melo_openepd_compact": {
-        "url": f"{JUICEFS_BASE}/openepd_eng_dict.oedb",
-        "check_file": "openepd_eng_dict.oedb",
-        "single_file": True,
-    },
-    # Voice ONNX-only packs (model.onnx + tiny model_meta.json)
-    # Prefer FP32 on Jetson CUDA EP: QUInt8 dynamic quant causes ~660 Memcpy
-    # fallbacks and ~27x slower ORT than FP32 (see Jetson int8 vs fp32 bench).
-    "tts_melo_openepd_fp32": {
-        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-fp32.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_openepd_fp32_lufeng": {
-        "url": f"{JUICEFS_BASE}/vits-melo-lufeng-openepd-nobert-44100-fp32.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_openepd_fp32_kai": {
-        "url": f"{JUICEFS_BASE}/vits-melo-kai-openepd-nobert-44100-fp32.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_openepd_fp16": {
-        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-fp16.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_openepd_int8": {
-        "url": f"{JUICEFS_BASE}/vits-melo-longanlingxin-openepd-nobert-44100-int8.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_openepd_int8_lufeng": {
-        "url": f"{JUICEFS_BASE}/vits-melo-lufeng-openepd-nobert-44100-int8.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_openepd_int8_kai": {
-        "url": f"{JUICEFS_BASE}/vits-melo-kai-openepd-nobert-44100-int8.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    # Piper dual-G2P B2 (model.onnx + model.onnx.json + frontend + lexicon + vendor/g2p)
-    "tts_piper_b2": {
-        "url": f"{JUICEFS_BASE}/piper-longanlingxin-b2.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo": {
-        "url": f"{JUICEFS_BASE}/vits-melo-tts-zh_en.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_melo_int8": {
-        "url": f"{JUICEFS_BASE}/vits-melo-tts-zh_en_int8.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_zh_finetuned": {
-        "url": f"{JUICEFS_BASE}/zh_finetuned.tar.bz2",
-        "check_file": "model.onnx",
-    },
-    "tts_kokoro_int8": {
-        "url": f"{JUICEFS_BASE}/kokoro-int8-multi-lang-v1_1.tar.bz2",
-        "check_file": "voices.bin",
-    },
-    "kws": {
-        "url": f"{COS_BASE}/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2",
-        "check_file": "tokens.txt",
-    },
-    "vad": {
-        "url": f"{COS_BASE}/silero_vad.onnx",
-        "check_file": "silero_vad.onnx",
-        "single_file": True,
     },
 }
 
