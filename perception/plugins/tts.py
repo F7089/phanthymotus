@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plugins/tts.py — Gentleman TTS (PhoneTone + Matcha + BigVGAN Python ORT).
+plugins/tts.py — Gentleman TTS (PhoneTone + Matcha + Vocos/BigVGAN Python ORT).
 """
 
 from __future__ import annotations
@@ -228,6 +228,13 @@ def _phonetone_acoustic_path(model_dir: str) -> str:
 def _phonetone_vocoder_path(model_dir: str) -> str:
     import os
 
+    env = os.environ.get("TTS_VOCODER_ONNX", "").strip()
+    if env:
+        return env
+    for name in ("vocos.onnx", "gentleman-vocos.onnx", "vocos-16khz-univ.onnx", "bigvgan.onnx"):
+        path = os.path.join(model_dir, name)
+        if os.path.isfile(path):
+            return path
     return os.path.join(model_dir, "bigvgan.onnx")
 
 
@@ -247,7 +254,7 @@ def _phonetone_e2e_path(model_dir: str) -> str:
 
 
 class _WaveformOrt:
-    """BigVGAN (or any mel→wav) ONNX."""
+    """Mel→wav ONNX. BigVGAN emits wav; Gentleman Vocos emits mag/x/y + CPU iSTFT."""
 
     def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
         voc_mb = os.environ.get("TTS_VOCODER_GPU_MEM_LIMIT_MB", "128").strip()
@@ -256,15 +263,28 @@ class _WaveformOrt:
             onnx_path, hw_provider, num_threads, gpu_mem_limit_mb=gpu_mb
         )
         self._in = self._sess.get_inputs()[0].name
+        outs = [o.name for o in self._sess.get_outputs()]
+        self._vocos = {"mag", "x", "y"}.issubset(outs)
+        self._out = None if self._vocos else outs[0]
+        log.info(
+            "[tts] vocoder onnx=%s kind=%s outs=%s gpu_mem_limit_mb=%s",
+            os.path.basename(onnx_path),
+            "vocos" if self._vocos else "wav",
+            outs,
+            gpu_mb,
+        )
 
     def infer(self, mel_bct):
         import numpy as np
 
         mel = np.ascontiguousarray(mel_bct, dtype=np.float32)
-        name = self._sess.get_outputs()[0].name
-        wav = np.asarray(
-            _ort_outputs(self._sess, {self._in: mel})[name], dtype=np.float32
-        ).reshape(-1)
+        out = _ort_outputs(self._sess, {self._in: mel})
+        if self._vocos:
+            from utils.matcha_ort import vocos_istft
+
+            wav = vocos_istft(out["mag"], out["x"], out["y"])
+        else:
+            wav = np.asarray(out[self._out], dtype=np.float32).reshape(-1)
         cap = int(mel.shape[-1]) * 256
         return wav[:cap]
 
