@@ -19,7 +19,7 @@ plugins:
 
   tts:
     enabled: true
-    # Gentleman PhoneTone V1: jieba + ToneSandhi + 94 phone. Matcha + BigVGAN ORT.
+    # Gentleman PhoneTone V1: jieba + ToneSandhi + 94 phone. Matcha + Vocos ORT.
     backend: matcha
     model_name: tts_matcha_gentleman
     model_dir: /models/matcha-gentleman-phonetone-16k

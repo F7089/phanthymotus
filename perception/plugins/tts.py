@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plugins/tts.py — Gentleman TTS (PhoneTone + Matcha + Vocos/BigVGAN Python ORT).
+plugins/tts.py — Gentleman TTS (PhoneTone + Matcha + Vocos Python ORT).
 """
 
 from __future__ import annotations
@@ -226,16 +226,17 @@ def _phonetone_acoustic_path(model_dir: str) -> str:
 
 
 def _phonetone_vocoder_path(model_dir: str) -> str:
+    """Gentleman ranking uses Vocos only (no BigVGAN fallback)."""
     import os
 
     env = os.environ.get("TTS_VOCODER_ONNX", "").strip()
     if env:
         return env
-    for name in ("vocos.onnx", "gentleman-vocos.onnx", "vocos-16khz-univ.onnx", "bigvgan.onnx"):
+    for name in ("gentleman-vocos.onnx", "vocos.onnx", "vocos-16khz-univ.onnx"):
         path = os.path.join(model_dir, name)
         if os.path.isfile(path):
             return path
-    return os.path.join(model_dir, "bigvgan.onnx")
+    return os.path.join(model_dir, "gentleman-vocos.onnx")
 
 
 def _phonetone_e2e_path(model_dir: str) -> str:
@@ -254,7 +255,7 @@ def _phonetone_e2e_path(model_dir: str) -> str:
 
 
 class _WaveformOrt:
-    """Mel→wav ONNX. BigVGAN emits wav; Gentleman Vocos emits mag/x/y + CPU iSTFT."""
+    """Mel→wav via Gentleman Vocos ONNX (mag/x/y) + CPU iSTFT."""
 
     def __init__(self, onnx_path: str, hw_provider: str, num_threads: int = 2):
         voc_mb = os.environ.get("TTS_VOCODER_GPU_MEM_LIMIT_MB", "128").strip()
@@ -264,27 +265,25 @@ class _WaveformOrt:
         )
         self._in = self._sess.get_inputs()[0].name
         outs = [o.name for o in self._sess.get_outputs()]
-        self._vocos = {"mag", "x", "y"}.issubset(outs)
-        self._out = None if self._vocos else outs[0]
+        if not {"mag", "x", "y"}.issubset(outs):
+            raise RuntimeError(
+                "Gentleman vocoder must be Vocos (outputs mag/x/y), got %s from %s"
+                % (outs, onnx_path)
+            )
         log.info(
-            "[tts] vocoder onnx=%s kind=%s outs=%s gpu_mem_limit_mb=%s",
+            "[tts] vocoder onnx=%s kind=vocos outs=%s gpu_mem_limit_mb=%s",
             os.path.basename(onnx_path),
-            "vocos" if self._vocos else "wav",
             outs,
             gpu_mb,
         )
 
     def infer(self, mel_bct):
         import numpy as np
+        from utils.matcha_ort import vocos_istft
 
         mel = np.ascontiguousarray(mel_bct, dtype=np.float32)
         out = _ort_outputs(self._sess, {self._in: mel})
-        if self._vocos:
-            from utils.matcha_ort import vocos_istft
-
-            wav = vocos_istft(out["mag"], out["x"], out["y"])
-        else:
-            wav = np.asarray(out[self._out], dtype=np.float32).reshape(-1)
+        wav = vocos_istft(out["mag"], out["x"], out["y"])
         cap = int(mel.shape[-1]) * 256
         return wav[:cap]
 
@@ -607,9 +606,9 @@ def _float_samples_to_pcm16(samples) -> bytes:
 
 
 class MatchaPhoneToneOrtAdapter(TTSAdapter):
-    """PhoneTone frontend + Matcha ONNX + BigVGAN ONNX.
+    """PhoneTone frontend + Matcha ONNX + Vocos ONNX.
 
-    Default is two CUDA sessions (Matcha then BigVGAN, sess.run). If
+    Default is two CUDA sessions (Matcha then Vocos, sess.run). If
     TTS_GENTLEMAN_E2E_ONNX or model_dir/gentleman-e2e.onnx exists, one
     merged session is used instead. Missing e2e file always falls back.
     """
