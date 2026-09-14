@@ -218,11 +218,46 @@ def _dump_stage(tag: str) -> None:
 def _phonetone_acoustic_path(model_dir: str) -> str:
     import os
 
-    for name in ("model-steps-3.onnx", "model-steps-10.onnx"):
+    # Prefer Python-seeded noise graph when present (noise is a graph input).
+    for name in (
+        "model-steps-3.seedednoise.onnx",
+        "model-steps-3.onnx",
+        "model-steps-10.onnx",
+    ):
         path = os.path.join(model_dir, name)
         if os.path.isfile(path):
             return path
     return os.path.join(model_dir, "model-steps-3.onnx")
+
+
+def _phonetone_mu_path(model_dir: str) -> str:
+    """Encoder cut used only to size the seeded Gaussian noise tensor."""
+    import os
+
+    path = os.path.join(model_dir, "model-steps-3.mu.onnx")
+    return path if os.path.isfile(path) else ""
+
+
+def _phonetone_matcha_seed() -> int:
+    import os
+
+    raw = os.environ.get("TTS_MATCHA_SEED", "1234").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 1234
+
+
+def _phonetone_acoustic_provider(hw_provider: str) -> str:
+    """Optional override. TTS_MATCHA_DETERMINISTIC=1 forces CPU (bit-identical)."""
+    import os
+
+    if os.environ.get("TTS_MATCHA_DETERMINISTIC", "0") == "1":
+        return "cpu"
+    override = os.environ.get("TTS_MATCHA_ACOUSTIC_PROVIDER", "").strip().lower()
+    if override in ("cpu", "cuda"):
+        return override
+    return hw_provider
 
 
 def _phonetone_vocoder_path(model_dir: str) -> str:
@@ -663,14 +698,34 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
             raise FileNotFoundError(acoustic)
         if not os.path.isfile(vocoder):
             raise FileNotFoundError(vocoder)
-        self._sess = _load_onnx_session(acoustic, hw_provider, num_threads)[1]
-        self._vocoder = _WaveformOrt(vocoder, hw_provider, num_threads)
+        acoustic_hw = _phonetone_acoustic_provider(hw_provider)
+        vocoder_hw = "cpu" if acoustic_hw == "cpu" else hw_provider
+        self._seed = _phonetone_matcha_seed()
+        self._mu_sess = None
+        mu_path = _phonetone_mu_path(model_dir)
+        in_names_probe = None
+        self._sess = _load_onnx_session(acoustic, acoustic_hw, num_threads)[1]
+        acoustic_inputs = {i.name for i in self._sess.get_inputs()}
+        self._needs_noise = "noise" in acoustic_inputs
+        if self._needs_noise:
+            if not mu_path:
+                raise FileNotFoundError(
+                    "seeded Matcha ONNX needs model-steps-3.mu.onnx beside %s" % acoustic
+                )
+            self._mu_sess = _load_onnx_session(mu_path, acoustic_hw, num_threads)[1]
+        self._vocoder = _WaveformOrt(vocoder, vocoder_hw, num_threads)
         log.info(
-            "[tts] Gentleman loaded: acoustic=%s vocoder=%s providers=%s frontend=%s",
+            "[tts] Gentleman loaded: acoustic=%s vocoder=%s acoustic_hw=%s vocoder_hw=%s "
+            "providers=%s frontend=%s seed=%s seeded_noise=%s deterministic=%s",
             os.path.basename(acoustic),
             os.path.basename(vocoder),
+            acoustic_hw,
+            vocoder_hw,
             self._sess.get_providers(),
             self._frontend.release,
+            self._seed if self._needs_noise else None,
+            self._needs_noise,
+            os.environ.get("TTS_MATCHA_DETERMINISTIC", "0"),
         )
 
     def split_text(self, text: str) -> list[str]:
@@ -690,6 +745,16 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         in_names = {i.name for i in self._sess.get_inputs()}
         if "x_length" in in_names and "x_lengths" not in in_names:
             feeds["x_length"] = feeds.pop("x_lengths")
+        if getattr(self, "_needs_noise", False):
+            mu_feeds = dict(feeds)
+            mu_in = {i.name for i in self._mu_sess.get_inputs()}
+            if "x_length" in mu_in and "x_lengths" in mu_feeds and "x_length" not in mu_feeds:
+                mu_feeds["x_length"] = mu_feeds["x_lengths"]
+            if "x_lengths" in mu_in and "x_length" in mu_feeds and "x_lengths" not in mu_feeds:
+                mu_feeds["x_lengths"] = mu_feeds["x_length"]
+            mu = self._mu_sess.run(None, {k: v for k, v in mu_feeds.items() if k in mu_in})[0]
+            rng = np.random.RandomState(int(self._seed))
+            feeds["noise"] = rng.randn(*mu.shape).astype(np.float32)
         out = _ort_outputs(self._sess, feeds)
         if getattr(self, "_e2e", False):
             wav = out.get("v/wav", out.get("wav"))

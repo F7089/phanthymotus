@@ -104,6 +104,44 @@ def _custom_en() -> dict:
 
 
 @lru_cache(maxsize=1)
+def _company_en_lexicon() -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Longest-first company English lexicon: KEY(upper) -> ARPAbet phones.
+
+    Loaded from frontend_release/company_en_lexicon.json when present.
+    """
+    path = _release() / "company_en_lexicon.json"
+    if not path.is_file():
+        return ()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    items = [(str(k).upper(), tuple(v)) for k, v in raw.items()]
+    items.sort(key=lambda kv: (-len(kv[0]), kv[0]))
+    return tuple(items)
+
+
+def _latin_boundary_ok(text: str, start: int, end: int) -> bool:
+    if start > 0 and text[start - 1].isalpha():
+        return False
+    if end < len(text) and text[end].isalpha():
+        return False
+    return True
+
+
+def _match_company_en(text: str, start: int):
+    """Return (end, arpa_tuple) for a company lexicon hit at start, else None."""
+    upper = text.upper()
+    for key, arpa in _company_en_lexicon():
+        end = start + len(key)
+        if end > len(text):
+            continue
+        if upper[start:end] != key:
+            continue
+        if not _latin_boundary_ok(text, start, end):
+            continue
+        return end, arpa
+    return None
+
+
+@lru_cache(maxsize=1)
 def _cmu() -> dict:
     cmu = {}
     with (_release() / "cmudict.rep").open(encoding="utf-8") as source:
@@ -206,9 +244,13 @@ def _en_phones(word: str):
     pronunciation = _custom_en().get(word.upper()) or _cmu().get(word.upper())
     if pronunciation is None:
         pronunciation = _letter_arpa(word)
+    return _arpa_list_to_phones(pronunciation)
+
+
+def _arpa_list_to_phones(pronunciation) -> tuple[list[str], list[int]]:
     converted = [_arpa_to_phone(value) for value in pronunciation if _ARPA_RE.fullmatch(value)]
     if not converted:
-        raise ValueError(f"English G2P produced no phones: {word!r}")
+        raise ValueError(f"English G2P produced no phones: {list(pronunciation)!r}")
     return [x[0] for x in converted], [x[1] for x in converted]
 
 
@@ -220,10 +262,27 @@ def prepare_phonetone(text: str, gold_lexical_pinyin: Sequence[str] | None = Non
             f"Gold/text alignment mismatch: {len(gold_lexical_pinyin)} != {len(normalized)}"
         )
     phones, raw_tones, langs = ["_"], [0], ["ZH"]
-    for match in _TOKEN_RE.finditer(normalized):
+    index = 0
+    n = len(normalized)
+    while index < n:
+        hit = _match_company_en(normalized, index)
+        if hit is not None:
+            end, arpa = hit
+            token_phones, token_tones = _arpa_list_to_phones(arpa)
+            phones.extend(token_phones)
+            raw_tones.extend(token_tones)
+            langs.extend(["EN"] * len(token_phones))
+            index = end
+            continue
+        match = _TOKEN_RE.match(normalized, index)
+        if match is None:
+            index += 1
+            continue
         token = match.group()
         if _CJK_RE.fullmatch(token):
-            token_gold = gold_lexical_pinyin[match.start() : match.end()] if gold_lexical_pinyin else None
+            token_gold = (
+                gold_lexical_pinyin[match.start() : match.end()] if gold_lexical_pinyin else None
+            )
             token_phones, token_tones = _zh_phones(token, token_gold)
             language = "ZH"
         elif token in punctuation:
@@ -234,6 +293,7 @@ def prepare_phonetone(text: str, gold_lexical_pinyin: Sequence[str] | None = Non
         phones.extend(token_phones)
         raw_tones.extend(token_tones)
         langs.extend([language] * len(token_phones))
+        index = match.end()
     phones.append("_")
     raw_tones.append(0)
     langs.append("ZH")
