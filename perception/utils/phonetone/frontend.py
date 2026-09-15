@@ -16,6 +16,7 @@ from pypinyin import Style, lazy_pinyin, load_phrases_dict
 
 from .fst_tn import FstNormalizer, apply_overlay, release_root, transliterate_non_cjk
 from .heteronym import custom_dict, jieba_phrases
+from .speak_patch import patch_speak_text
 from .symbols import (
     language_id_map,
     language_tone_start_map,
@@ -255,7 +256,8 @@ def _arpa_list_to_phones(pronunciation) -> tuple[list[str], list[int]]:
 
 
 def prepare_phonetone(text: str, gold_lexical_pinyin: Sequence[str] | None = None) -> PhoneToneResult:
-    raw = _fst()(text) if _NEED_TN_RE.search(text or "") else (text or "")
+    text = patch_speak_text((text or "").strip())
+    raw = _fst()(text) if _NEED_TN_RE.search(text) else text
     normalized = transliterate_non_cjk(raw).replace("嗯", "恩").replace("呣", "母")
     if gold_lexical_pinyin is not None and len(gold_lexical_pinyin) != len(normalized):
         raise ValueError(
