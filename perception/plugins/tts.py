@@ -537,12 +537,29 @@ def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[s
 
 
 def _strip_sentence_punct(segment: str) -> str:
-    """After split: replace sentence-end marks with spaces; keep commas."""
+    """After split: drop sentence-end marks; keep commas and numeric/version dots.
+
+    Never treat ``42.3`` / ``V2.8.1`` dots as sentence ends — that made ranking
+    read versions/decimals differently from local PhoneTone TN tests.
+    """
     import re
 
     if not segment:
         return segment
-    out = re.sub(r"[。．\.！!？\?；;]+", " ", segment)
+    protected: list[str] = []
+
+    def _hold(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"\0{len(protected) - 1}\0"
+
+    # Keep decimals / dotted versions / NO.0917-style refs intact.
+    out = re.sub(r"(?i)\b[a-z]*\d+(?:\.\d+)+\b", _hold, segment)
+    out = re.sub(r"(?i)\b[a-z]{1,8}\.\d+\b", _hold, out)
+    out = re.sub(r"[。！？；!?;]+", " ", out)
+    # ASCII / fullwidth '.' only when not inside a protected number/version.
+    out = re.sub(r"[．.]+", " ", out)
+    for index, value in enumerate(protected):
+        out = out.replace(f"\0{index}\0", value)
     return re.sub(r"\s+", " ", out).strip()
 
 

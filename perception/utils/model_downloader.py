@@ -1,9 +1,14 @@
 """
-utils/model_downloader.py — Fetch Gentleman Matcha pack from JuiceFS if missing.
+utils/model_downloader.py — Fetch Gentleman Matcha pack from JuiceFS.
+
+Always reinstall from the current JuiceFS/HTTP tar. Do not reuse a stale
+/models tree (old TN / frontend / onnx) just because check_file exists.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -22,6 +27,7 @@ JUICEFS_LOCAL = os.environ.get("TTS_JUICEFS_DIR", "/mnt/data/fanyi/phanthymotus_
 def _progress_hook(name: str):
     """Create a reporthook for urlretrieve that logs download progress."""
     last_pct = [0]
+
     def hook(block_num, block_size, total_size):
         if total_size > 0:
             pct = min(int(block_num * block_size * 100 / total_size), 100)
@@ -29,8 +35,12 @@ def _progress_hook(name: str):
                 last_pct[0] = pct
                 mb_done = block_num * block_size / (1024 * 1024)
                 mb_total = total_size / (1024 * 1024)
-                log.info(f"[model_downloader] {name}: {pct}% ({mb_done:.1f}/{mb_total:.1f} MB)")
+                log.info(
+                    f"[model_downloader] {name}: {pct}% ({mb_done:.1f}/{mb_total:.1f} MB)"
+                )
+
     return hook
+
 
 MODELS = {
     "tts_matcha_gentleman": {
@@ -38,6 +48,15 @@ MODELS = {
         "check_file": "model-steps-3.onnx",
         # Ranking uses 3-step. Do not extract the 10-step graph into page cache.
         "skip_files": ("model-steps-10.onnx",),
+        # Must match a fresh local JuiceFS pack after every install.
+        "required_files": (
+            "model-steps-3.onnx",
+            "gentleman-vocos.onnx",
+            "frontend_release/opencpop-strict.txt",
+            "frontend_release/tn_cache/zh_tn_tagger.fst",
+            "frontend_release/tn_cache/zh_tn_verbalizer.fst",
+            "frontend_release/tn_cache/tn_manifest.json",
+        ),
     },
 }
 
@@ -100,32 +119,106 @@ def _local_juicefs_src(url: str) -> str | None:
     return path if os.path.isfile(path) else None
 
 
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _wipe_model_dir(model_dir: str) -> None:
+    """Remove any previous install so leftover TN/frontend files cannot linger."""
+    if os.path.isdir(model_dir):
+        log.info("[model_downloader] wiping stale model dir: %s", model_dir)
+        shutil.rmtree(model_dir)
+    elif os.path.exists(model_dir):
+        os.unlink(model_dir)
+    os.makedirs(model_dir, exist_ok=True)
+
+
+def _verify_required(name: str, model_dir: str, required_files) -> None:
+    missing = [
+        rel
+        for rel in required_files or ()
+        if not os.path.isfile(os.path.join(model_dir, rel))
+    ]
+    if missing:
+        raise RuntimeError(
+            f"[model_downloader] {name}: install incomplete, missing: {missing}"
+        )
+    manifest = os.path.join(
+        model_dir, "frontend_release", "tn_cache", "tn_manifest.json"
+    )
+    if not os.path.isfile(manifest):
+        return
+    meta = json.loads(open(manifest, encoding="utf-8").read())
+    if meta.get("schema_version") != 1:
+        raise RuntimeError(
+            f"[model_downloader] {name}: unsupported tn_manifest schema"
+        )
+    for fst_name, fst_meta in (meta.get("fst") or {}).items():
+        path = os.path.join(model_dir, "frontend_release", "tn_cache", fst_name)
+        if not os.path.isfile(path):
+            raise RuntimeError(
+                f"[model_downloader] {name}: TN fst missing after install: {fst_name}"
+            )
+        size = os.path.getsize(path)
+        digest = _file_sha256(path)
+        if size != int(fst_meta.get("bytes", -1)) or digest != fst_meta.get("sha256"):
+            raise RuntimeError(
+                f"[model_downloader] {name}: TN checksum mismatch: {fst_name}"
+            )
+
+
+def _write_install_stamp(model_dir: str, src_path: str, src_kind: str) -> None:
+    stamp = {
+        "src_kind": src_kind,
+        "src_path": src_path,
+        "src_sha256": _file_sha256(src_path),
+        "src_bytes": os.path.getsize(src_path),
+        "src_mtime": os.path.getmtime(src_path),
+    }
+    path = os.path.join(model_dir, ".juicefs_install.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(stamp, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    log.info(
+        "[model_downloader] install stamp: kind=%s sha256=%s bytes=%s",
+        src_kind,
+        stamp["src_sha256"][:16],
+        stamp["src_bytes"],
+    )
+
+
 def ensure_model(name: str, model_dir: str) -> None:
-    """Ensure model files exist in model_dir. Load from data disk, else HTTP."""
+    """Always reinstall model_dir from the current JuiceFS/HTTP pack.
+
+    Ranking hosts mount persistent /models. Reusing an old tree made local
+    JuiceFS updates (TN / lexicon / onnx) invisible on the leaderboard.
+    """
     info = MODELS.get(name)
     if not info:
         raise ValueError(f"Unknown model name: {name}")
 
     check_path = os.path.join(model_dir, info["check_file"])
     skip_files = info.get("skip_files") or ()
-    if os.path.exists(check_path):
-        log.info(f"[model_downloader] {name}: already exists at {model_dir}")
-        _unlink_skipped(model_dir, skip_files)
-        drop_file_pages(model_dir)
-        return
-
+    required_files = info.get("required_files") or (info["check_file"],)
     url = info["url"]
-    os.makedirs(model_dir, exist_ok=True)
     local = _local_juicefs_src(url)
+
+    _wipe_model_dir(model_dir)
 
     if info.get("single_file"):
         dest = os.path.join(model_dir, info["check_file"])
         if local:
             log.info(f"[model_downloader] {name}: copy from data disk {local}")
             shutil.copy2(local, dest)
+            _write_install_stamp(model_dir, local, "juicefs_local_file")
         else:
             log.info(f"[model_downloader] {name}: downloading from {url} ...")
             urlretrieve(url, dest, reporthook=_progress_hook(name))
+            _write_install_stamp(model_dir, dest, "http_file")
         log.info(f"[model_downloader] {name}: done.")
         return
 
@@ -137,8 +230,10 @@ def ensure_model(name: str, model_dir: str) -> None:
         else:
             _extract_tar(local, model_dir, skip_files)
         _unlink_skipped(model_dir, skip_files)
+        _verify_required(name, model_dir, required_files)
+        _write_install_stamp(model_dir, local, "juicefs_local_tar")
         drop_file_pages(model_dir)
-        log.info(f"[model_downloader] {name}: done.")
+        log.info(f"[model_downloader] {name}: done (fresh install from JuiceFS).")
         if not os.path.exists(check_path):
             raise RuntimeError(
                 f"[model_downloader] {name}: local extract completed but "
@@ -157,13 +252,15 @@ def ensure_model(name: str, model_dir: str) -> None:
             _extract_zip(tmp_path, model_dir, skip_files)
         else:
             _extract_tar(tmp_path, model_dir, skip_files)
+        _write_install_stamp(model_dir, tmp_path, "http_tar")
         drop_file_pages(tmp_path)
-        log.info(f"[model_downloader] {name}: done.")
+        log.info(f"[model_downloader] {name}: done (fresh install from HTTP).")
     finally:
         if os.path.exists(tmp_path):
             drop_file_pages(tmp_path)
             os.unlink(tmp_path)
     _unlink_skipped(model_dir, skip_files)
+    _verify_required(name, model_dir, required_files)
     drop_file_pages(model_dir)
 
     if not os.path.exists(check_path):
@@ -176,22 +273,25 @@ def ensure_model(name: str, model_dir: str) -> None:
 def _extract_zip(zip_path: str, model_dir: str, skip_files=()) -> None:
     """Extract zip, stripping common top-level directory prefix."""
     skip = set(skip_files or ())
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        names = [n for n in zf.namelist()
-                 if not n.endswith('/') and not n.startswith('__MACOSX')]
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        names = [
+            n
+            for n in zf.namelist()
+            if not n.endswith("/") and not n.startswith("__MACOSX")
+        ]
         if not names:
             raise RuntimeError(f"Empty archive: {zip_path}")
 
         prefix = _common_prefix_from_names(names)
         for name in names:
-            stripped = name[len(prefix):] if prefix else name
+            stripped = name[len(prefix) :] if prefix else name
             if not stripped:
                 continue
             if os.path.basename(stripped) in skip:
                 continue
             dest = os.path.join(model_dir, stripped)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with zf.open(name) as src, open(dest, 'wb') as dst:
+            with zf.open(name) as src, open(dest, "wb") as dst:
                 dst.write(src.read())
                 dst.flush()
                 os.fsync(dst.fileno())
@@ -211,13 +311,16 @@ def _extract_tar(tar_path: str, model_dir: str, skip_files=()) -> None:
         for m in members:
             if m.isdir():
                 continue
-            if prefix:
-                m.name = m.name[len(prefix):]
-            if not m.name:
+            # Copy member before mutating name (TarInfo is shared).
+            name = m.name
+            if prefix and name.startswith(prefix):
+                name = name[len(prefix) :]
+            name = name.lstrip("/")
+            if not name:
                 continue
-            m.name = m.name.lstrip("/")
-            if os.path.basename(m.name) in skip:
+            if os.path.basename(name) in skip:
                 continue
+            m.name = name
             tf.extract(m, model_dir)
             drop_file_pages(os.path.join(model_dir, m.name), log_result=False)
 
