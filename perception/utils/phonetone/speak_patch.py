@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import re
 
+# Ranking / docs often use U+2011 NB hyphen etc. FST date/SN rules only match ASCII "-".
+_DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d]")
+
 # SI-ish units glued to a number. Avoid bare "A" in model ids (A-10, A1024).
 _UNIT_AFTER_DIGIT = (
     (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mA\b"), r"\1毫安"),
@@ -40,9 +43,12 @@ _EQ_LATIN = re.compile(r"等于([a-z]{1,6})\b")
 # MR-0719 style: keep letters split so CMU never says "mister".
 _MR_CODE = re.compile(r"\bMR\s*[-–—]?\s*(\d+)\b", re.I)
 
+# "订单 ID：8492610" is cardinal without a serial cue; TN needs 订单号/编号.
+_ORDER_ID = re.compile(r"订单\s*ID\s*[:：]?\s*", re.I)
+
 # Tail / explicit digit-serial cues already handled by TN for 尾号; reinforce 编号.
 _SERIAL_SPACED = re.compile(
-    r"(尾号|编号|型号|工号|卡号|券码|验证码)\s*([0-9]{2,})",
+    r"(尾号|编号|型号|工号|卡号|券码|验证码|订单号|物流单号)\s*([0-9]{2,})",
 )
 
 
@@ -54,8 +60,9 @@ def patch_speak_text(text: str) -> str:
     """Rewrite text before FST TN / G2P."""
     if not text:
         return text
-    out = text
+    out = _DASH_RE.sub("-", text)
 
+    out = _ORDER_ID.sub("订单号", out)
     out = _MODEL_DIGIT[0].sub(_MODEL_DIGIT[1], out)
     out = _ACRONYM_SLASH.sub(_expand_acronym_slash, out)
     out = _MR_CODE.sub(lambda m: f"M R-{m.group(1)}", out)
