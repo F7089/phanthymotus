@@ -598,6 +598,7 @@ class TTSAdapter(ABC):
             if spoken:
                 spoken_parts.append((segment, spoken))
         for i, (segment, spoken) in enumerate(spoken_parts):
+            log.info("[tts] synth spoken[%d/%d]: %s", i + 1, len(spoken_parts), spoken)
             buffer += self._synthesize_segment(spoken)
             if i + 1 < len(spoken_parts) and os.environ.get("TTS_SEGMENT_PAUSE", "1") != "0":
                 buffer += _silence_pcm16(_ending_pause_ms(segment))
@@ -694,8 +695,18 @@ class MatchaPhoneToneOrtAdapter(TTSAdapter):
         )
 
     def split_text(self, text: str) -> list[str]:
-        text = self._frontend.normalize(text)
-        return _split_utterance(self, text)
+        from utils.phonetone.speak_patch import patch_speak_text
+
+        raw = (text or "").strip()
+        patched = patch_speak_text(raw)
+        tn_text = self._frontend.normalize(raw)
+        log.info("[tts] frontend input: %s", raw)
+        log.info("[tts] frontend patched: %s", patched)
+        log.info("[tts] frontend TN: %s", tn_text)
+        segments = _split_utterance(self, tn_text)
+        for index, segment in enumerate(segments):
+            log.info("[tts] segment[%d/%d]: %s", index + 1, len(segments), segment)
+        return segments
 
     def _synthesize_segment(self, text: str) -> bytes:
         import numpy as np
@@ -862,6 +873,9 @@ class _TTSNode(Node):
                     f"{[len(segment) for segment in segments]}"
                 )
 
+                publish_delay_ms = float(os.environ.get("TTS_PUBLISH_DELAY_MS", "100"))
+                publish_delay_pending = publish_delay_ms > 0
+
                 # Decouple offline sentence synthesis from real-time publishing.
                 # The producer can generate the next sentence while audio from
                 # the current sentence is being paced to the ROS2 topic.
@@ -920,7 +934,20 @@ class _TTSNode(Node):
                         if t0 is None:
                             prebuf.append(frame)
                             if len(prebuf) >= PREBUF_FRAMES:
+                                if publish_delay_pending:
+                                    log.info(
+                                        "[tts] publish delay %.0fms before first frame (pacing=%s)",
+                                        publish_delay_ms,
+                                        self._realtime_pacing,
+                                    )
+                                    _time.sleep(publish_delay_ms / 1000.0)
+                                    publish_delay_pending = False
                                 t0 = _time.monotonic() if self._realtime_pacing else 0.0
+                                log.info(
+                                    "[tts] first publish: prebuf=%d frames pacing=%s",
+                                    len(prebuf),
+                                    self._realtime_pacing,
+                                )
                                 for pf in prebuf:
                                     frames_sent = self._publish_frame(
                                         pf, frames_sent, t0, FRAME_DURATION
