@@ -816,6 +816,39 @@ class _TTSNode(Node):
             raise RuntimeError("TTS not running; call start first")
         self._text_queue.put(text)
 
+    def _wait_subscriber_then_settle(self) -> None:
+        """Block until ranking side has subscribed, then settle 200ms before first frame.
+
+        Blind TTS_PUBLISH_DELAY_MS is not used: discovery is dynamic, so we wait for
+        get_subscription_count() >= 1, then a short settle so the listener is ready.
+        """
+        import time as _time
+
+        timeout_s = float(os.environ.get("TTS_SUBSCRIBER_WAIT_S", "5"))
+        settle_ms = float(os.environ.get("TTS_SUBSCRIBER_SETTLE_MS", "200"))
+        deadline = _time.monotonic() + max(0.0, timeout_s)
+        waited_s = 0.0
+        while not self._stop_event.is_set():
+            count = int(self._pub.get_subscription_count())
+            if count >= 1:
+                log.info(
+                    "[tts] subscriber ready count=%d after %.0fms; settle %.0fms",
+                    count,
+                    waited_s * 1000.0,
+                    settle_ms,
+                )
+                if settle_ms > 0:
+                    _time.sleep(settle_ms / 1000.0)
+                return
+            if _time.monotonic() >= deadline:
+                log.warning(
+                    "[tts] no subscriber within %.1fs (count=0); publishing anyway",
+                    timeout_s,
+                )
+                return
+            _time.sleep(0.02)
+            waited_s = timeout_s - max(0.0, deadline - _time.monotonic())
+
     def _publish_frame(self, frame: bytes, frames_sent: int, t0: Optional[float], frame_duration: float):
         from audio_msgs.msg import AudioChunk
         import time as _time
@@ -873,8 +906,7 @@ class _TTSNode(Node):
                     f"{[len(segment) for segment in segments]}"
                 )
 
-                publish_delay_ms = float(os.environ.get("TTS_PUBLISH_DELAY_MS", "100"))
-                publish_delay_pending = publish_delay_ms > 0
+                subscriber_gate_pending = True
 
                 # Decouple offline sentence synthesis from real-time publishing.
                 # The producer can generate the next sentence while audio from
@@ -934,14 +966,9 @@ class _TTSNode(Node):
                         if t0 is None:
                             prebuf.append(frame)
                             if len(prebuf) >= PREBUF_FRAMES:
-                                if publish_delay_pending:
-                                    log.info(
-                                        "[tts] publish delay %.0fms before first frame (pacing=%s)",
-                                        publish_delay_ms,
-                                        self._realtime_pacing,
-                                    )
-                                    _time.sleep(publish_delay_ms / 1000.0)
-                                    publish_delay_pending = False
+                                if subscriber_gate_pending:
+                                    self._wait_subscriber_then_settle()
+                                    subscriber_gate_pending = False
                                 t0 = _time.monotonic() if self._realtime_pacing else 0.0
                                 log.info(
                                     "[tts] first publish: prebuf=%d frames pacing=%s",
@@ -962,6 +989,9 @@ class _TTSNode(Node):
                 # Flush any remaining pre-buffer (short utterances < PREBUF_FRAMES)
                 if prebuf and not self._stop_event.is_set():
                     if t0 is None:
+                        if subscriber_gate_pending:
+                            self._wait_subscriber_then_settle()
+                            subscriber_gate_pending = False
                         t0 = _time.monotonic() if self._realtime_pacing else 0.0
                     for pf in prebuf:
                         frames_sent = self._publish_frame(
