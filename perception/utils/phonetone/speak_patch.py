@@ -11,6 +11,12 @@ import re
 # Ranking / docs often use U+2011 NB hyphen etc. FST date/SN rules only match ASCII "-".
 _DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d]")
 
+# Hard replacements first — never rely on TN for these slash pairs.
+_HARD_REPLACEMENTS = (
+    (re.compile(r"(?i)MCP\s*[/／∕⁄]\s*DDS"), "MCP DDS"),
+    (re.compile(r"(?i)TCP\s*[/／∕⁄]\s*IP"), "TCP IP"),
+)
+
 # SI-ish units glued to a number. Avoid bare "A" in model ids (A-10, A1024).
 _UNIT_AFTER_DIGIT = (
     (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mA\b"), r"\1毫安"),
