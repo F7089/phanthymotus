@@ -32,8 +32,13 @@ _MODEL_DIGIT = (
 )
 
 # Acronym slash: MCP/DDS → MCP DDS (pause), never "除".
-_ACRONYM_SLASH = re.compile(r"\b([A-Z]{2,})(?:/([A-Z]{2,}))+\b")
-
+# Ranking often glues CJK (支持MCP/DDS), spaces (MCP / DDS), or fullwidth／.
+# Do not use \\b — CJK is \\w in Python, so 持MCP has no boundary.
+_SLASH_CHARS = r"/／∕⁄"
+_ACRONYM_SLASH = re.compile(
+    rf"(?<![A-Za-z0-9])([A-Za-z]{{2,}}(?:\s*[{_SLASH_CHARS}]\s*[A-Za-z]{{2,}})+)(?![A-Za-z0-9])",
+    re.I,
+)
 # Formula equals without relying on TN digit gate.
 _EQ = re.compile(r"([A-Za-z0-9\)）])\s*=\s*([A-Za-z0-9\(（])")
 
@@ -58,8 +63,8 @@ _SERIAL_SPACED = re.compile(
 
 
 def _expand_acronym_slash(match: re.Match) -> str:
-    return " ".join(match.group(0).split("/"))
-
+    parts = re.split(rf"\s*[{_SLASH_CHARS}]\s*", match.group(0))
+    return " ".join(p for p in parts if p)
 
 def patch_speak_text(text: str) -> str:
     """Rewrite text before FST TN / G2P."""
