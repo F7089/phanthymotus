@@ -55,7 +55,12 @@ def _release() -> Path:
     return release_root()
 
 
-_NEED_TN_RE = re.compile(r"[0-9０-９]")
+# Digits always. Also force TN for URLs / bare www hosts (no digits) and
+# latin letter-minus formulas — otherwise FST never runs and strip eats '.'.
+_NEED_TN_RE = re.compile(
+    r"[0-9０-９]|https?://|www\.|[A-Za-z]\s*[-−–—]\s*[A-Za-z0-9]",
+    re.I,
+)
 _LETTER_ARPA = {
     "A": ["EY1"],
     "B": ["B", "IY1"],

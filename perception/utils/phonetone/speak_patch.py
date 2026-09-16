@@ -46,6 +46,11 @@ _MR_CODE = re.compile(r"\bMR\s*[-–—]?\s*(\d+)\b", re.I)
 # "订单 ID：8492610" is cardinal without a serial cue; TN needs 订单号/编号.
 _ORDER_ID = re.compile(r"订单\s*ID\s*[:：]?\s*", re.I)
 
+# Single-letter algebra minus: a-b → a减b.
+# Do not use \\b: Python \\w treats CJK as word chars, so a-b等于… would miss.
+# ASCII lookaround keeps SN-73049 / example-site / A-10 untouched.
+_LETTER_MINUS = re.compile(r"(?<![A-Za-z0-9])([A-Za-z])\s*-\s*([A-Za-z])(?![A-Za-z0-9])")
+
 # Tail / explicit digit-serial cues already handled by TN for 尾号; reinforce 编号.
 _SERIAL_SPACED = re.compile(
     r"(尾号|编号|型号|工号|卡号|券码|验证码|订单号|物流单号)\s*([0-9]{2,})",
@@ -68,6 +73,8 @@ def patch_speak_text(text: str) -> str:
     out = _MR_CODE.sub(lambda m: f"M R-{m.group(1)}", out)
     out = _EQ.sub(r"\1等于\2", out)
     out = _EQ_LATIN.sub(lambda m: "等于" + " ".join(m.group(1).upper()), out)
+    # After EQ expands ma; single-letter 减 only (not SN-73049 / example-site).
+    out = _LETTER_MINUS.sub(r"\1减\2", out)
 
     for pattern, repl in _UNIT_AFTER_DIGIT:
         out = pattern.sub(repl, out)

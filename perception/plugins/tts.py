@@ -552,11 +552,14 @@ def _strip_sentence_punct(segment: str) -> str:
         protected.append(match.group(0))
         return f"\0{len(protected) - 1}\0"
 
+    # Keep URLs intact — stripping '.' before/without TN kills 点/斜杠 readings.
+    out = re.sub(r"(?i)\bhttps?://[^\s，。；！？]+", _hold, segment)
+    out = re.sub(r"(?i)\bwww\.[^\s，。；！？]+", _hold, out)
     # Keep decimals / dotted versions / NO.0917-style refs intact.
-    out = re.sub(r"(?i)\b[a-z]*\d+(?:\.\d+)+\b", _hold, segment)
+    out = re.sub(r"(?i)\b[a-z]*\d+(?:\.\d+)+\b", _hold, out)
     out = re.sub(r"(?i)\b[a-z]{1,8}\.\d+\b", _hold, out)
     out = re.sub(r"[。！？；!?;]+", " ", out)
-    # ASCII / fullwidth '.' only when not inside a protected number/version.
+    # ASCII / fullwidth '.' only when not inside a protected number/version/URL.
     out = re.sub(r"[．.]+", " ", out)
     for index, value in enumerate(protected):
         out = out.replace(f"\0{index}\0", value)
