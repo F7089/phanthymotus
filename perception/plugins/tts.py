@@ -826,15 +826,16 @@ class _TTSNode(Node):
 
         timeout_s = float(os.environ.get("TTS_SUBSCRIBER_WAIT_S", "5"))
         settle_ms = float(os.environ.get("TTS_SUBSCRIBER_SETTLE_MS", "200"))
-        deadline = _time.monotonic() + max(0.0, timeout_s)
-        waited_s = 0.0
+        t_wait0 = _time.monotonic()
+        deadline = t_wait0 + max(0.0, timeout_s)
         while not self._stop_event.is_set():
             count = int(self._pub.get_subscription_count())
             if count >= 1:
+                waited_ms = (_time.monotonic() - t_wait0) * 1000.0
                 log.info(
                     "[tts] subscriber ready count=%d after %.0fms; settle %.0fms",
                     count,
-                    waited_s * 1000.0,
+                    waited_ms,
                     settle_ms,
                 )
                 if settle_ms > 0:
@@ -847,8 +848,6 @@ class _TTSNode(Node):
                 )
                 return
             _time.sleep(0.02)
-            waited_s = timeout_s - max(0.0, deadline - _time.monotonic())
-
     def _publish_frame(self, frame: bytes, frames_sent: int, t0: Optional[float], frame_duration: float):
         from audio_msgs.msg import AudioChunk
         import time as _time
