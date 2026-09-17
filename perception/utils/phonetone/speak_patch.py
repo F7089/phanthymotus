@@ -30,6 +30,9 @@ _UNIT_AFTER_DIGIT = (
     (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*V\b"), r"\1伏"),
     (re.compile(r"(电流|安培)\s*(\d+(?:\.\d+)?)\s*A\b"), r"\1\2安"),
     (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*A\b(?!\s*[-/])"), r"\1安"),
+    (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*GB\b"), r"\1吉字节"),
+    (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*MB\b"), r"\1兆字节"),
+    (re.compile(r"(?i)(?<![A-Za-z])(\d+(?:\.\d+)?)\s*KB\b"), r"\1千字节"),
 )
 
 # GPU / product model numbers: force hyphen so TN reads digits one-by-one.
@@ -56,6 +59,27 @@ _MR_CODE = re.compile(r"\bMR\s*[-–—]?\s*(\d+)\b", re.I)
 
 # "订单 ID：8492610" is cardinal without a serial cue; TN needs 订单号/编号.
 _ORDER_ID = re.compile(r"订单\s*ID\s*[:：]?\s*", re.I)
+
+# Product/model hyphen with a letter on the right (GPT-4o, Qwen3-TTS).
+# Pure digit tails (RTX-4090, SN-73049) stay hyphenated for TN serial reading.
+_PRODUCT_HYPHEN = re.compile(
+    r"(?<![A-Za-z0-9])([A-Za-z]{2,}\d*)-([0-9]*[A-Za-z][A-Za-z0-9]*)(?![A-Za-z0-9])"
+)
+# 2.5-TTS / 4-mini: digit-hyphen-letters is a version, not 减.
+_VERSION_LETTER_HYPHEN = re.compile(
+    r"(\d)-([A-Za-z]{2,})(?![A-Za-z0-9])"
+)
+# Qwen3 / 4o / USB3. Scientific 1e-4 is expanded before this so it stays intact.
+_LETTER_DIGIT = re.compile(r"([A-Za-z])(\d)")
+_DIGIT_LETTER = re.compile(r"(\d)([A-Za-z])")
+_SCI_NUM = re.compile(
+    r"(?<![A-Za-z0-9])(\d+(?:\.\d+)?)[eE]([+-]?\d+)(?![A-Za-z0-9])"
+)
+# Mixtral-8x7B / 640x480 ASCII multiply. Unicode × is already handled by FST.
+_DIGIT_X_DIGIT = re.compile(r"(?<=\d)[xX](?=\d)")
+# 2x-3: keep 减 before letter/digit spacing (otherwise FST drops the minus).
+_ALGEBRA_VAR_MINUS = re.compile(r"(?<=\d)([A-Za-z])-(\d)")
+_URL_HOLD_RE = re.compile(r"\[\[\[U([A-Z]+)\]\]\]")
 
 # Single-letter algebra minus: a-b → a减b.
 # Do not use \\b: Python \\w treats CJK as word chars, so a-b等于… would miss.
@@ -101,6 +125,33 @@ def _space_last_n_digits(match: re.Match) -> str:
     return f"{cue}是 {' '.join(digits)}"
 
 
+def _alpha_id(n: int) -> str:
+    n += 1
+    chars: list[str] = []
+    while n:
+        n, remainder = divmod(n - 1, 26)
+        chars.append(chr(ord("A") + remainder))
+    return "".join(reversed(chars))
+
+
+def _alpha_id_value(tag: str) -> int:
+    value = 0
+    for char in tag:
+        value = value * 26 + (ord(char) - 64)
+    return value - 1
+
+
+def _expand_sci(match: re.Match) -> str:
+    base, exp = match.group(1), match.group(2)
+    if exp.startswith("-"):
+        sign, digits = "负", exp[1:]
+    elif exp.startswith("+"):
+        sign, digits = "", exp[1:]
+    else:
+        sign, digits = "", exp
+    return f"{base}乘十的{sign}{digits}次方"
+
+
 def _verbalize_url(url: str) -> str:
     """Force protocol/path slashes to 斜杠 so TN cannot drop them."""
     match = _URL_PARSE.match(url)
@@ -108,7 +159,7 @@ def _verbalize_url(url: str) -> str:
         return url.replace("/", " 斜杠 ").replace(".", " 点 ")
     scheme, host, path = match.group(1), match.group(2), match.group(3) or ""
     scheme_cn = " ".join(scheme.upper()) + " 冒号 斜杠 斜杠"
-    host_cn = host.replace(".", " 点 ")
+    host_cn = re.sub(r"(?i)\bwww\b", "W W W", host).replace(".", " 点 ")
     path_parts = [part for part in path.split("/") if part]
     path_cn = "".join(f" 斜杠 {part}" for part in path_parts)
     return re.sub(r"\s+", " ", f"{scheme_cn} {host_cn}{path_cn}").strip()
@@ -124,7 +175,7 @@ def patch_speak_text(text: str) -> str:
 
     def _hold_url(match: re.Match) -> str:
         held.append(match.group(0))
-        return f"\0URL{len(held) - 1}\0"
+        return f"[[[U{_alpha_id(len(held) - 1)}]]]"
 
     out = _URL_HOLD.sub(_hold_url, out)
 
@@ -135,6 +186,13 @@ def patch_speak_text(text: str) -> str:
     out = _LAST_N_DIGITS.sub(_space_last_n_digits, out)
     out = _MODEL_DIGIT[0].sub(_MODEL_DIGIT[1], out)
     out = _HEX_BYTES.sub(_expand_hex_bytes, out)
+    out = _PRODUCT_HYPHEN.sub(r"\1 \2", out)
+    out = _VERSION_LETTER_HYPHEN.sub(r"\1 \2", out)
+    out = _SCI_NUM.sub(_expand_sci, out)
+    out = _ALGEBRA_VAR_MINUS.sub(r"\1减\2", out)
+    out = _DIGIT_X_DIGIT.sub("乘", out)
+    out = _LETTER_DIGIT.sub(r"\1 \2", out)
+    out = _DIGIT_LETTER.sub(r"\1 \2", out)
     out = _ACRONYM_SLASH.sub(_expand_acronym_slash, out)
     out = _MR_CODE.sub(lambda m: f"M R-{m.group(1)}", out)
     out = _EQ.sub(r"\1等于\2", out)
@@ -148,6 +206,11 @@ def patch_speak_text(text: str) -> str:
     # Ensure serial cue + digits stay adjacent for TN digit verbalizer.
     out = _SERIAL_SPACED.sub(r"\1\2", out)
 
-    for index, value in enumerate(held):
-        out = out.replace(f"\0URL{index}\0", _verbalize_url(value))
+    def _restore_url(match: re.Match) -> str:
+        index = _alpha_id_value(match.group(1))
+        if 0 <= index < len(held):
+            return _verbalize_url(held[index])
+        return match.group(0)
+
+    out = _URL_HOLD_RE.sub(_restore_url, out)
     return out

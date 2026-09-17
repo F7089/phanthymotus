@@ -109,25 +109,35 @@ def _custom_en() -> dict:
     return json.loads((_release() / "custom_en_pronunciations.json").read_text(encoding="utf-8"))
 
 
+def _load_arpa_lexicon(path: Path) -> dict[str, tuple[str, ...]]:
+    if not path.is_file():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {str(k).upper(): tuple(v) for k, v in raw.items()}
+
+
 @lru_cache(maxsize=1)
 def _company_en_lexicon() -> tuple[tuple[str, tuple[str, ...]], ...]:
     """Longest-first company English lexicon: KEY(upper) -> ARPAbet phones.
 
-    Loaded from frontend_release/company_en_lexicon.json when present.
+    JuiceFS frontend_release/company_en_lexicon.json plus git extra overlay
+    (perception/utils/phonetone/en_lexicon_extra.json) so ranking picks up
+    new brands without rebuilding the model tar.
     """
-    path = _release() / "company_en_lexicon.json"
-    if not path.is_file():
-        return ()
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    items = [(str(k).upper(), tuple(v)) for k, v in raw.items()]
-    items.sort(key=lambda kv: (-len(kv[0]), kv[0]))
-    return tuple(items)
+    items = _load_arpa_lexicon(_release() / "company_en_lexicon.json")
+    items.update(_load_arpa_lexicon(Path(__file__).with_name("en_lexicon_extra.json")))
+    ranked = sorted(items.items(), key=lambda kv: (-len(kv[0]), kv[0]))
+    return tuple(ranked)
+
+
+def _is_latin_alpha(char: str) -> bool:
+    return "A" <= char <= "Z" or "a" <= char <= "z"
 
 
 def _latin_boundary_ok(text: str, start: int, end: int) -> bool:
-    if start > 0 and text[start - 1].isalpha():
+    if start > 0 and _is_latin_alpha(text[start - 1]):
         return False
-    if end < len(text) and text[end].isalpha():
+    if end < len(text) and _is_latin_alpha(text[end]):
         return False
     return True
 
@@ -246,9 +256,56 @@ def _letter_arpa(word: str) -> list[str]:
     return phones
 
 
+_CAMEL_SPLIT_RE = (
+    re.compile(r"([a-z])([A-Z])"),
+    re.compile(r"([A-Z]+)([A-Z][a-z])"),
+    re.compile(r"([A-Za-z])(\d)"),
+    re.compile(r"(\d)([A-Za-z])"),
+)
+
+
+def _split_en_token(word: str) -> list[str]:
+    """ChatGPT → Chat GPT, Qwen3 → Qwen 3. Skip iPhone-style ^[a-z][A-Z]."""
+    if len(word) < 4 or re.match(r"^[a-z][A-Z]", word):
+        return [word]
+    out = word
+    for pattern in _CAMEL_SPLIT_RE:
+        out = pattern.sub(r"\1\0\2", out)
+    parts = [part for part in out.split("\0") if part]
+    return parts if len(parts) > 1 else [word]
+
+
+@lru_cache(maxsize=1)
+def _company_en_map() -> dict[str, tuple[str, ...]]:
+    return dict(_company_en_lexicon())
+
+
 def _en_phones(word: str):
-    pronunciation = _custom_en().get(word.upper()) or _cmu().get(word.upper())
+    if "-" in word:
+        phones, tones = [], []
+        for part in word.split("-"):
+            if not part:
+                continue
+            part_phones, part_tones = _en_phones(part)
+            phones.extend(part_phones)
+            tones.extend(part_tones)
+        if phones:
+            return phones, tones
+    upper = word.upper()
+    pronunciation = (
+        _custom_en().get(upper)
+        or _company_en_map().get(upper)
+        or _cmu().get(upper)
+    )
     if pronunciation is None:
+        parts = _split_en_token(word)
+        if len(parts) > 1:
+            phones, tones = [], []
+            for part in parts:
+                part_phones, part_tones = _en_phones(part)
+                phones.extend(part_phones)
+                tones.extend(part_tones)
+            return phones, tones
         pronunciation = _letter_arpa(word)
     return _arpa_list_to_phones(pronunciation)
 
@@ -260,9 +317,72 @@ def _arpa_list_to_phones(pronunciation) -> tuple[list[str], list[int]]:
     return [x[0] for x in converted], [x[1] for x in converted]
 
 
+def _hold_mark(index: int) -> str:
+    n = index + 1
+    chars: list[str] = []
+    while n:
+        n, remainder = divmod(n - 1, 26)
+        chars.append(chr(ord("A") + remainder))
+    return "[[[H" + "".join(reversed(chars)) + "]]]"
+
+
+_HOLD_RE = re.compile(r"\[\[\[H([A-Z]+)\]\]\]")
+
+
+def _protect_company_terms(text: str) -> tuple[str, list[str]]:
+    """Keep company/brand tokens intact so WeText FST cannot camel-split them."""
+    held: list[str] = []
+    if not text:
+        return text, held
+    lexicon = _company_en_lexicon()
+    upper = text.upper()
+    out: list[str] = []
+    index = 0
+    n = len(text)
+    while index < n:
+        hit_end = None
+        for key, _arpa in lexicon:
+            if len(key) < 2:
+                continue
+            end = index + len(key)
+            if end > n or upper[index:end] != key:
+                continue
+            if not _latin_boundary_ok(text, index, end):
+                continue
+            # Keep RTX-4090 / SN-73049 glued; holding the letters makes FST
+            # read the tail as a negative cardinal (负四千…).
+            if end < n and text[end] == "-" and end + 1 < n and text[end + 1].isdigit():
+                continue
+            hit_end = end
+            break
+        if hit_end is not None:
+            held.append(text[index:hit_end])
+            out.append(_hold_mark(len(held) - 1))
+            index = hit_end
+        else:
+            out.append(text[index])
+            index += 1
+    return "".join(out), held
+
+
+def _restore_company_terms(text: str, held: list[str]) -> str:
+    def _restore(match: re.Match) -> str:
+        value = 0
+        for char in match.group(1):
+            value = value * 26 + (ord(char) - 64)
+        index = value - 1
+        if 0 <= index < len(held):
+            return held[index]
+        return match.group(0)
+
+    return _HOLD_RE.sub(_restore, text)
+
+
 def prepare_phonetone(text: str, gold_lexical_pinyin: Sequence[str] | None = None) -> PhoneToneResult:
     text = patch_speak_text((text or "").strip())
-    raw = _fst()(text) if _NEED_TN_RE.search(text) else text
+    protected, held_terms = _protect_company_terms(text)
+    raw = _fst()(protected) if _NEED_TN_RE.search(text) else protected
+    raw = _restore_company_terms(raw, held_terms)
     normalized = transliterate_non_cjk(raw).replace("嗯", "恩").replace("呣", "母")
     if gold_lexical_pinyin is not None and len(gold_lexical_pinyin) != len(normalized):
         raise ValueError(

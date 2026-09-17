@@ -22,7 +22,9 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 CHUNK_BYTES = 3200  # 100ms @ 16kHz 16-bit mono
-MAX_SEGMENT_CHARS = 35
+# 0 = do not length-split; only cut at sentence punctuation (。！？；).
+# Forced N-char cuts were adding mid-clause pauses in ranking copy.
+MAX_SEGMENT_CHARS = 0
 # Local synthesis buffer. 600 frames is about 60 seconds / 1.9 MB of PCM.
 # It lets the producer synthesize the next sentence while the current one plays.
 SYNTH_QUEUE_FRAMES = 600
@@ -354,16 +356,18 @@ _PAUSE_MS = {
     "，": 120,
     ",": 120,
     "、": 80,
-    "；": 200,
-    ";": 200,
+    # Timeline 分号 in ranking copy is closer to a comma than a period.
+    "；": 100,
+    ";": 100,
     "：": 150,
     ":": 150,
     "。": 280,
+    "．": 280,
+    ".": 220,
     "！": 280,
     "？": 280,
     "!": 280,
     "?": 280,
-    "．": 280,
 }
 
 
@@ -460,7 +464,8 @@ def _ending_pause_ms(segment: str) -> int:
         s = s[:-1]
     if not s:
         return 0
-    return int(_PAUSE_MS.get(s[-1], 80))
+    # Only punctuated joins get silence. Length cuts (if any) concatenate.
+    return int(_PAUSE_MS.get(s[-1], 0))
 
 
 def _silence_pcm16(ms: int) -> bytes:
@@ -479,12 +484,32 @@ def _split_utterance(adapter, text: str) -> list[str]:
     return _split_text_for_tts(text, _resolve_max_segment_chars(adapter))
 
 
+def _split_to_fit_tokens(sentence: str, budget: int = 240) -> list[str]:
+    """Keep clauses under Matcha MAX_TOKENS. Cut at ，/; only when needed."""
+    if not sentence:
+        return []
+    from utils.phonetone import encode_for_matcha
+
+    spoken = _strip_sentence_punct(sentence)
+    if encode_for_matcha(spoken)["real_len"] < budget:
+        return [sentence]
+    parts = _split_long_segment(sentence, max(24, len(sentence) // 2))
+    if len(parts) == 1:
+        cut = max(24, len(sentence) // 2)
+        parts = [sentence[:cut], sentence[cut:]]
+    out: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if part:
+            out.extend(_split_to_fit_tokens(part, budget))
+    return out or [sentence]
+
+
 def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[str]:
     """Split for TTS without chopping every comma.
 
     Always cut at 。！？； / newline / English .!? (not 3.14 or U.S.).
-    A remaining clause longer than max_chars is cut at ，, then space,
-    and only then at、.
+    Length-splitting at ， is off unless max_chars > 0.
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
     if not normalized:
@@ -524,14 +549,20 @@ def _split_text_for_tts(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> list[s
 
             sentence = "".join(current).strip()
             if sentence:
-                segments.extend(_split_long_segment(sentence, max_chars))
+                if max_chars > 0:
+                    segments.extend(_split_long_segment(sentence, max_chars))
+                else:
+                    segments.extend(_split_to_fit_tokens(sentence))
             current = []
 
         index += 1
 
     tail = "".join(current).strip()
     if tail:
-        segments.extend(_split_long_segment(tail, max_chars))
+        if max_chars > 0:
+            segments.extend(_split_long_segment(tail, max_chars))
+        else:
+            segments.extend(_split_to_fit_tokens(tail))
 
     return segments
 
