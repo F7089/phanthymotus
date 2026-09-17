@@ -73,6 +73,12 @@ _SERIAL_SPACED = re.compile(
     r"(尾号|编号|型号|工号|卡号|券码|验证码|订单号|物流单号)\s*([0-9]{2,})",
 )
 
+# "最后四位是 5690" is cardinal without a serial cue; space digits so TN
+# reads 五 六 九 零 (no redundant 尾号/编号).
+_LAST_N_DIGITS = re.compile(
+    r"((?:最后|末尾|后)\s*[一二三四五六七八九十两\d]+\s*位)\s*[是为:：]?\s*([0-9]{2,})"
+)
+
 # Hold URLs so later slash/minus rules cannot rewrite path segments.
 _URL_HOLD = re.compile(r"(?i)\bhttps?://[^\s，。；！？,]+|\bwww\.[^\s，。；！？,]+")
 _URL_PARSE = re.compile(r"(?i)^(https?)://([^/\s]+)(/.*)?$")
@@ -88,6 +94,11 @@ def _expand_hex_bytes(match: re.Match) -> str:
     if not _HEX_LETTER.search(value):
         return value
     return " ".join(value.split("-"))
+
+
+def _space_last_n_digits(match: re.Match) -> str:
+    cue, digits = match.group(1), match.group(2)
+    return f"{cue}是 {' '.join(digits)}"
 
 
 def _verbalize_url(url: str) -> str:
@@ -121,6 +132,7 @@ def patch_speak_text(text: str) -> str:
         out = pattern.sub(repl, out)
 
     out = _ORDER_ID.sub("订单号", out)
+    out = _LAST_N_DIGITS.sub(_space_last_n_digits, out)
     out = _MODEL_DIGIT[0].sub(_MODEL_DIGIT[1], out)
     out = _HEX_BYTES.sub(_expand_hex_bytes, out)
     out = _ACRONYM_SLASH.sub(_expand_acronym_slash, out)
