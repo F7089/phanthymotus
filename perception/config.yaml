@@ -37,7 +37,7 @@ plugins:
       - "hello"
     # Pace ROS AudioChunk publish to wall-clock so ranking listeners that
     # attach slightly late still hear the first segment (burst was e2e_RTF~0.13).
-    realtime_pacing: true
+    realtime_pacing: false
     noise_scale: 0.667
     noise_scale_w: 0.8
 
