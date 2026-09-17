@@ -146,6 +146,27 @@ custom_dict = {
     "抓空去": [["zhua1"], ["kong4"], ["qu4"]],
     "我倒是": [["wo3"], ["dao4"], ["shi4"]],
     "得了满分": [["de2"], ["le5"], ["man3"], ["fen1"]],
+    # 行 hang2 vs xing2. Do not add bare 一行 — 一行人 is xing2.
+    "投行": [["tou2"], ["hang2"]],
+    "跨行": [["kua4"], ["hang2"]],
+    "一行代码": [["yi4"], ["hang2"], ["dai4"], ["ma3"]],
+    "这一行": [["zhe4"], ["yi4"], ["hang2"]],
+    "下一行": [["xia4"], ["yi4"], ["hang2"]],
+    "上一行": [["shang4"], ["yi4"], ["hang2"]],
+    "第一行": [["di4"], ["yi4"], ["hang2"]],
+    "最后一行": [["zui4"], ["hou4"], ["yi4"], ["hang2"]],
+    # 调 tiao2 vs diao4. 调查/强调/调度 stay diao4 via pypinyin.
+    "调研": [["tiao2"], ["yan2"]],
+    "调高": [["tiao2"], ["gao1"]],
+    "调低": [["tiao2"], ["di1"]],
+    "调大": [["tiao2"], ["da4"]],
+    "调小": [["tiao2"], ["xiao3"]],
+    "调参": [["tiao2"], ["can1"]],
+    "调优": [["tiao2"], ["you1"]],
+    "调试": [["tiao2"], ["shi4"]],
+    # 为 wei2 (copula) vs wei4 (for). 为了/因为/为什么 already wei4.
+    "视为": [["shi4"], ["wei2"]],
+    "名为": [["ming2"], ["wei2"]],
 }
 
 # Frozen VITS segmentation hints. Pronunciation still comes from custom_dict;
@@ -153,4 +174,7 @@ custom_dict = {
 jieba_phrases = (
     "华为", "藏塔", "一次次地", "不好意思地", "严丝合缝地", "刺骨地",
     "很耐心地", "慢慢地", "快乐地", "警惕地", "那得要",
+    "投行", "跨行", "一行代码", "这一行", "下一行", "上一行", "第一行", "最后一行",
+    "调研", "调高", "调低", "调大", "调小", "调参", "调优", "调试",
+    "视为", "名为",
 )
