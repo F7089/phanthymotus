@@ -115986,15 +115986,8 @@
     "OW1"
   ],
   "SWE-BENCH": [
-    "EH1",
     "S",
-    "D",
-    "AH1",
-    "B",
-    "AH0",
-    "L",
-    "Y",
-    "UW0",
+    "W",
     "IY1",
     "B",
     "EH1",
@@ -116037,7 +116030,7 @@
   "C-EVAL": [
     "S",
     "IY1",
-    "IY1",
+    "IH0",
     "V",
     "AE1",
     "L"
@@ -116083,8 +116076,6 @@
     "M"
   ],
   "LLMOPS": [
-    "EH1",
-    "L",
     "EH1",
     "L",
     "EH1",
@@ -116181,11 +116172,11 @@
   "TRANSFERFAMILY": [
     "T",
     "R",
-    "AE1",
+    "AE0",
     "N",
     "S",
     "F",
-    "ER0",
+    "ER1",
     "F",
     "AE1",
     "M",
@@ -116203,7 +116194,7 @@
     "N",
     "IY0",
     "W",
-    "EH2",
+    "EH1",
     "R"
   ],
   "PERSISTENTDISK": [
@@ -116230,7 +116221,7 @@
     "T",
     "AO1",
     "R",
-    "IH0",
+    "AH0",
     "JH"
   ],
   "CILIUMHUBBLE": [
@@ -116371,7 +116362,7 @@
     "N",
     "F",
     "L",
-    "OW1"
+    "OW0"
   ],
   "APPRUNNER": [
     "AE1",
@@ -116387,7 +116378,7 @@
     "EH1",
     "N",
     "T",
-    "AH0",
+    "IH0",
     "T",
     "IY0",
     "S",
@@ -116495,7 +116486,7 @@
     "L",
     "OY1",
     "HH",
-    "AH1",
+    "AH2",
     "B"
   ],
   "MODELPACK": [
@@ -116505,7 +116496,7 @@
     "AH0",
     "L",
     "P",
-    "AE1",
+    "AE2",
     "K"
   ],
   "MOCKSERVER": [
@@ -116535,7 +116526,7 @@
     "OW1",
     "D",
     "S",
-    "AO1",
+    "AO2",
     "R",
     "S"
   ],
@@ -116561,8 +116552,13 @@
     "L",
     "AE1",
     "SH",
-    "G",
+    "JH",
+    "IY1",
+    "JH",
+    "IY1",
+    "Y",
     "UW1",
+    "EH1",
     "F"
   ],
   "FLASH-MLX": [
@@ -116588,7 +116584,7 @@
     "K",
     "ER0",
     "S",
-    "EH1",
+    "EH2",
     "T"
   ],
   "CAREDX": [
@@ -116618,8 +116614,7 @@
     "R",
     "TH",
     "IH1",
-    "NG",
-    "K"
+    "NG"
   ],
   "FATPIPE": [
     "F",
@@ -116754,13 +116749,10 @@
     "IY0"
   ],
   "FAQ'S-AGENT": [
-    "EH1",
     "F",
-    "EY1",
+    "AE1",
     "K",
-    "Y",
-    "UW1",
-    "Z",
+    "S",
     "EY1",
     "JH",
     "AH0",
@@ -116940,7 +116932,7 @@
     "T",
     "IH1",
     "K",
-    "IH0",
+    "AH0",
     "T"
   ],
   "FASTPITCH": [
@@ -117136,7 +117128,7 @@
     "AO1",
     "R",
     "D",
-    "AY0",
+    "IH0",
     "M",
     "EH1",
     "N",
@@ -117274,6 +117266,4202 @@
     "AH0",
     "L",
     "EY1"
+  ],
+  "GILEAD": [
+    "G",
+    "IH1",
+    "L",
+    "IY0",
+    "AH0",
+    "D"
+  ],
+  "DR": [
+    "D",
+    "AA1",
+    "K",
+    "T",
+    "ER0"
+  ],
+  "LINDE": [
+    "L",
+    "IH1",
+    "N",
+    "D",
+    "AH0"
+  ],
+  "BIOSCIENCES": [
+    "B",
+    "AY2",
+    "OW0",
+    "S",
+    "AY1",
+    "AH0",
+    "N",
+    "S",
+    "IH0",
+    "Z"
+  ],
+  "TAL": [
+    "T",
+    "IY1",
+    "EY1",
+    "EH1",
+    "L"
+  ],
+  "EDA": [
+    "IY1",
+    "D",
+    "IY1",
+    "EY1"
+  ],
+  "DASSAULT": [
+    "D",
+    "AE0",
+    "S",
+    "OW1"
+  ],
+  "SAP": [
+    "EH1",
+    "S",
+    "EY1",
+    "P",
+    "IY1"
+  ],
+  "AST": [
+    "EY1",
+    "EH1",
+    "S",
+    "T",
+    "IY1"
+  ],
+  "SPACEMOBILE": [
+    "S",
+    "P",
+    "EY1",
+    "S",
+    "M",
+    "OW1",
+    "B",
+    "AH0",
+    "L"
+  ],
+  "SENSENOVA": [
+    "S",
+    "EH1",
+    "N",
+    "S",
+    "N",
+    "OW1",
+    "V",
+    "AH0"
+  ],
+  "NEC": [
+    "EH1",
+    "N",
+    "IY1",
+    "S",
+    "IY1"
+  ],
+  "VIS": [
+    "V",
+    "IY1",
+    "AY1",
+    "EH1",
+    "S"
+  ],
+  "MI": [
+    "EH1",
+    "M",
+    "AY1"
+  ],
+  "PONTE": [
+    "P",
+    "AA1",
+    "N",
+    "T",
+    "EY0"
+  ],
+  "OLT": [
+    "OW1",
+    "EH1",
+    "L",
+    "T",
+    "IY1"
+  ],
+  "ATE": [
+    "EY1",
+    "T",
+    "IY1",
+    "IY1"
+  ],
+  "INS": [
+    "AY1",
+    "EH1",
+    "N",
+    "EH1",
+    "S"
+  ],
+  "AMR": [
+    "EY1",
+    "EH1",
+    "M",
+    "AA1",
+    "R"
+  ],
+  "LITEMAT": [
+    "L",
+    "AY1",
+    "T",
+    "M",
+    "AE1",
+    "T"
+  ],
+  "EEG": [
+    "IY1",
+    "IY1",
+    "JH",
+    "IY1"
+  ],
+  "O-MINI": [
+    "OW1",
+    "M",
+    "IH1",
+    "N",
+    "IY0"
+  ],
+  "SERVICEBUS": [
+    "S",
+    "ER1",
+    "V",
+    "AH0",
+    "S",
+    "B",
+    "AH1",
+    "S"
+  ],
+  "SYNAPSE": [
+    "S",
+    "IH1",
+    "N",
+    "AE2",
+    "P",
+    "S"
+  ],
+  "STREAMANALYTICS": [
+    "S",
+    "T",
+    "R",
+    "IY1",
+    "M",
+    "AE2",
+    "N",
+    "AH0",
+    "L",
+    "IH1",
+    "T",
+    "IH0",
+    "K",
+    "S"
+  ],
+  "AIFOUNDRY": [
+    "EY1",
+    "AY1",
+    "F",
+    "AW1",
+    "N",
+    "D",
+    "R",
+    "IY0"
+  ],
+  "ULTRADISK": [
+    "AH1",
+    "L",
+    "T",
+    "R",
+    "AH0",
+    "D",
+    "IH1",
+    "S",
+    "K"
+  ],
+  "PLAYFAB": [
+    "P",
+    "L",
+    "EY1",
+    "F",
+    "AE1",
+    "B"
+  ],
+  "CLOUDNAT": [
+    "K",
+    "L",
+    "AW1",
+    "D",
+    "N",
+    "AE1",
+    "T"
+  ],
+  "TRANSFERAPPLIANCE": [
+    "T",
+    "R",
+    "AE0",
+    "N",
+    "S",
+    "F",
+    "ER1",
+    "AH0",
+    "P",
+    "L",
+    "AY1",
+    "AH0",
+    "N",
+    "S"
+  ],
+  "CUBEFS": [
+    "K",
+    "Y",
+    "UW1",
+    "B",
+    "EH1",
+    "F",
+    "EH1",
+    "S"
+  ],
+  "WEAVENET": [
+    "W",
+    "IY1",
+    "V",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "BUILDKIT": [
+    "B",
+    "IH1",
+    "L",
+    "D",
+    "K",
+    "IH1",
+    "T"
+  ],
+  "OPENEBS": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "IY1",
+    "B",
+    "IY1",
+    "EH1",
+    "S"
+  ],
+  "FLASH-NEXT": [
+    "F",
+    "L",
+    "AE1",
+    "SH",
+    "N",
+    "EH1",
+    "K",
+    "S",
+    "T"
+  ],
+  "OPENTHOUGHTS": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "TH",
+    "AO1",
+    "T",
+    "S"
+  ],
+  "YI-CODER": [
+    "Y",
+    "IY1",
+    "K",
+    "OW1",
+    "D",
+    "ER0"
+  ],
+  "VIDEOCHAT": [
+    "V",
+    "IH1",
+    "D",
+    "IY0",
+    "OW0",
+    "CH",
+    "AE1",
+    "T"
+  ],
+  "VIDEOPOET": [
+    "V",
+    "IH1",
+    "D",
+    "IY0",
+    "OW0",
+    "P",
+    "OW1",
+    "AH0",
+    "T"
+  ],
+  "HIDREAM": [
+    "HH",
+    "AY1",
+    "D",
+    "R",
+    "IY1",
+    "M"
+  ],
+  "SPEECHT": [
+    "S",
+    "P",
+    "IY1",
+    "CH",
+    "T",
+    "IY1"
+  ],
+  "EOS": [
+    "IY1",
+    "OW1",
+    "EH1",
+    "S"
+  ],
+  "OKUMA": [
+    "OW0",
+    "K",
+    "UW1",
+    "M",
+    "AH0"
+  ],
+  "FUCHS": [
+    "F",
+    "UH1",
+    "K",
+    "S"
+  ],
+  "ABBABILITY": [
+    "EY1",
+    "B",
+    "IY1",
+    "B",
+    "IY1",
+    "AH0",
+    "B",
+    "IH1",
+    "L",
+    "AH0",
+    "T",
+    "IY0"
+  ],
+  "SEW": [
+    "EH1",
+    "S",
+    "IY1",
+    "D",
+    "AH1",
+    "B",
+    "AH0",
+    "L",
+    "Y",
+    "UW0"
+  ],
+  "UR": [
+    "Y",
+    "UW1",
+    "AA1",
+    "R"
+  ],
+  "MYCOBOT": [
+    "M",
+    "AY1",
+    "K",
+    "OW1",
+    "B",
+    "AA2",
+    "T"
+  ],
+  "LIMX": [
+    "L",
+    "IH1",
+    "M",
+    "EH1",
+    "K",
+    "S"
+  ],
+  "MATRICE": [
+    "M",
+    "AH0",
+    "T",
+    "R",
+    "IY1",
+    "S"
+  ],
+  "ETC": [
+    "IY1",
+    "T",
+    "IY1",
+    "S",
+    "IY1"
+  ],
+  "REDNET": [
+    "R",
+    "EH1",
+    "D",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "MEDIACOMPOSER": [
+    "M",
+    "IY1",
+    "D",
+    "IY0",
+    "AH0",
+    "K",
+    "AH0",
+    "M",
+    "P",
+    "OW1",
+    "Z",
+    "ER0"
+  ],
+  "ZOOMROOMS": [
+    "Z",
+    "UW1",
+    "M",
+    "R",
+    "UW1",
+    "M",
+    "Z"
+  ],
+  "FS": [
+    "EH1",
+    "F",
+    "EH1",
+    "S"
+  ],
+  "NIXOS": [
+    "N",
+    "IH1",
+    "K",
+    "S",
+    "OW1",
+    "EH1",
+    "S"
+  ],
+  "APPIMAGE": [
+    "AE1",
+    "P",
+    "IH1",
+    "M",
+    "AH0",
+    "JH"
+  ],
+  "LIMITRANGE": [
+    "L",
+    "IH1",
+    "M",
+    "AH0",
+    "T",
+    "R",
+    "EY1",
+    "N",
+    "JH"
+  ],
+  "EVENUP": [
+    "IY1",
+    "V",
+    "AH0",
+    "N",
+    "AH1",
+    "P"
+  ],
+  "ARCGIS": [
+    "AA1",
+    "R",
+    "K",
+    "JH",
+    "IH1",
+    "S"
+  ],
+  "FACTSET": [
+    "F",
+    "AE1",
+    "K",
+    "T",
+    "S",
+    "EH1",
+    "T"
+  ],
+  "GAE": [
+    "JH",
+    "IY1",
+    "EY1",
+    "IY1"
+  ],
+  "REST-EM": [
+    "R",
+    "EH1",
+    "S",
+    "T",
+    "IY1",
+    "EH1",
+    "M"
+  ],
+  "PROGRAM-OF-THOUGHT": [
+    "P",
+    "R",
+    "OW1",
+    "G",
+    "R",
+    "AE2",
+    "M",
+    "AH1",
+    "V",
+    "TH",
+    "AO1",
+    "T"
+  ],
+  "K-FAC": [
+    "K",
+    "EY1",
+    "F",
+    "AE1",
+    "K"
+  ],
+  "EMA": [
+    "IY1",
+    "EH1",
+    "M",
+    "EY1"
+  ],
+  "WISE-FT": [
+    "W",
+    "AY1",
+    "Z",
+    "EH1",
+    "F",
+    "T",
+    "IY1"
+  ],
+  "S-LORA": [
+    "EH1",
+    "S",
+    "L",
+    "AO1",
+    "R",
+    "AH0"
+  ],
+  "AWQ-LORA": [
+    "EY1",
+    "D",
+    "AH1",
+    "B",
+    "AH0",
+    "L",
+    "Y",
+    "UW0",
+    "K",
+    "Y",
+    "UW1",
+    "L",
+    "AO1",
+    "R",
+    "AH0"
+  ],
+  "OFT": [
+    "OW1",
+    "EH1",
+    "F",
+    "T",
+    "IY1"
+  ],
+  "LN": [
+    "EH1",
+    "L",
+    "EH1",
+    "N"
+  ],
+  "PACKNET": [
+    "P",
+    "AE1",
+    "K",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "OPEN-X": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "EH1",
+    "K",
+    "S"
+  ],
+  "UPS": [
+    "Y",
+    "UW1",
+    "P",
+    "IY1",
+    "EH1",
+    "S"
+  ],
+  "TE": [
+    "T",
+    "IY1",
+    "IY1"
+  ],
+  "MR": [
+    "EH1",
+    "M",
+    "AA1",
+    "R"
+  ],
+  "ASA": [
+    "EY1",
+    "EH1",
+    "S",
+    "EY1"
+  ],
+  "ISE": [
+    "AY1",
+    "EH1",
+    "S",
+    "IY1"
+  ],
+  "NE": [
+    "EH1",
+    "N",
+    "IY1"
+  ],
+  "FORTISWITCH": [
+    "F",
+    "AO1",
+    "R",
+    "T",
+    "IY0",
+    "S",
+    "W",
+    "IH1",
+    "CH"
+  ],
+  "FORTISASE": [
+    "F",
+    "AO1",
+    "R",
+    "T",
+    "IY0",
+    "S",
+    "AE1",
+    "S",
+    "IY0"
+  ],
+  "NETSCALER": [
+    "N",
+    "EH1",
+    "T",
+    "S",
+    "K",
+    "EY1",
+    "L",
+    "ER0"
+  ],
+  "SONICWALL": [
+    "S",
+    "AA1",
+    "N",
+    "IH0",
+    "K",
+    "W",
+    "AO1",
+    "L"
+  ],
+  "SHUFFLENET": [
+    "SH",
+    "AH1",
+    "F",
+    "AH0",
+    "L",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "NASNET": [
+    "N",
+    "AE1",
+    "S",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "RETINANET": [
+    "R",
+    "EH1",
+    "T",
+    "AH0",
+    "N",
+    "AH0",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "MASKRCNN": [
+    "M",
+    "AE1",
+    "S",
+    "K",
+    "AA1",
+    "R",
+    "S",
+    "IY1",
+    "EH1",
+    "N",
+    "EH1",
+    "N"
+  ],
+  "PP-YOLO": [
+    "P",
+    "IY1",
+    "P",
+    "IY1",
+    "Y",
+    "OW1",
+    "L",
+    "OW0"
+  ],
+  "CENTERNET": [
+    "S",
+    "EH1",
+    "N",
+    "T",
+    "ER0",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "OPENORCA": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "AO1",
+    "R",
+    "K",
+    "AH0"
+  ],
+  "WILDCHAT": [
+    "W",
+    "AY1",
+    "L",
+    "D",
+    "CH",
+    "AE1",
+    "T"
+  ],
+  "TESLAP": [
+    "T",
+    "EH1",
+    "S",
+    "L",
+    "AH0",
+    "P",
+    "IY1"
+  ],
+  "TESLAV": [
+    "T",
+    "EH1",
+    "S",
+    "L",
+    "AH0",
+    "V",
+    "IY1"
+  ],
+  "TESLAT": [
+    "T",
+    "EH1",
+    "S",
+    "L",
+    "AH0",
+    "T",
+    "IY1"
+  ],
+  "TESLAM": [
+    "T",
+    "EH1",
+    "S",
+    "L",
+    "AH0",
+    "EH1",
+    "M"
+  ],
+  "ARCA": [
+    "AA1",
+    "R",
+    "K",
+    "EY1"
+  ],
+  "BI": [
+    "B",
+    "IY1",
+    "AY1"
+  ],
+  "CLOUDBLAZER": [
+    "K",
+    "L",
+    "AW1",
+    "D",
+    "B",
+    "L",
+    "EY1",
+    "Z",
+    "ER0"
+  ],
+  "OPENREVIEW": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "R",
+    "IY2",
+    "V",
+    "Y",
+    "UW1"
+  ],
+  "SCIKIT-LEARN": [
+    "S",
+    "AY1",
+    "K",
+    "IH0",
+    "T",
+    "L",
+    "ER1",
+    "N"
+  ],
+  "INVOKEAI": [
+    "IH2",
+    "N",
+    "V",
+    "OW1",
+    "K",
+    "EY1",
+    "AY1"
+  ],
+  "IP-ADAPTER": [
+    "AY1",
+    "P",
+    "IY1",
+    "AH0",
+    "D",
+    "AE1",
+    "P",
+    "T",
+    "ER0"
+  ],
+  "INSTANTID": [
+    "IH1",
+    "N",
+    "S",
+    "T",
+    "AH0",
+    "N",
+    "T",
+    "AY1",
+    "D",
+    "IY1"
+  ],
+  "SCIKIT-IMAGE": [
+    "S",
+    "AY1",
+    "K",
+    "IH0",
+    "T",
+    "IH1",
+    "M",
+    "AH0",
+    "JH"
+  ],
+  "MACBOOKAIR": [
+    "M",
+    "AE1",
+    "K",
+    "B",
+    "UH1",
+    "K",
+    "EH1",
+    "R"
+  ],
+  "MACMINI": [
+    "M",
+    "AE1",
+    "K",
+    "M",
+    "IH1",
+    "N",
+    "IY0"
+  ],
+  "IOS": [
+    "AY1",
+    "OW1",
+    "EH1",
+    "S"
+  ],
+  "TOUCHID": [
+    "T",
+    "AH1",
+    "CH",
+    "AY1",
+    "D",
+    "IY1"
+  ],
+  "MAGSAFE": [
+    "M",
+    "AE1",
+    "G",
+    "S",
+    "EY1",
+    "F"
+  ],
+  "UIKIT": [
+    "Y",
+    "UW1",
+    "AY1",
+    "K",
+    "IH1",
+    "T"
+  ],
+  "PIXELBUDS": [
+    "P",
+    "IH1",
+    "K",
+    "S",
+    "AH0",
+    "L",
+    "B",
+    "AH1",
+    "D",
+    "Z"
+  ],
+  "GOOGLEDOCS": [
+    "G",
+    "UW1",
+    "G",
+    "AH0",
+    "L",
+    "D",
+    "AA1",
+    "K",
+    "S"
+  ],
+  "YOUTUBE": [
+    "Y",
+    "UW1",
+    "T",
+    "UW2",
+    "B"
+  ],
+  "ONEDRIVE": [
+    "W",
+    "AH1",
+    "N",
+    "D",
+    "R",
+    "AY1",
+    "V"
+  ],
+  "POWERTOYS": [
+    "P",
+    "AW1",
+    "ER0",
+    "T",
+    "OY1",
+    "Z"
+  ],
+  "IFS": [
+    "AY1",
+    "EH1",
+    "F",
+    "EH1",
+    "S"
+  ],
+  "ABBROBOTICS": [
+    "EY1",
+    "B",
+    "IY1",
+    "B",
+    "IY1",
+    "R",
+    "OW0",
+    "B",
+    "AA1",
+    "T",
+    "IH0",
+    "K",
+    "S"
+  ],
+  "TESLAOPTIMUS": [
+    "T",
+    "EH1",
+    "S",
+    "L",
+    "AH0",
+    "AA1",
+    "P",
+    "T",
+    "AH0",
+    "M",
+    "AH0",
+    "S"
+  ],
+  "CARBONBLACK": [
+    "K",
+    "AA1",
+    "R",
+    "B",
+    "AH0",
+    "N",
+    "B",
+    "L",
+    "AE1",
+    "K"
+  ],
+  "CODEQL": [
+    "K",
+    "OW1",
+    "D",
+    "K",
+    "Y",
+    "UW1",
+    "EH1",
+    "L"
+  ],
+  "BOE": [
+    "B",
+    "IY1",
+    "OW1",
+    "IY1"
+  ],
+  "LIAUTO": [
+    "L",
+    "IY1",
+    "AO1",
+    "T",
+    "OW0"
+  ],
+  "SHEIN": [
+    "SH",
+    "IY1",
+    "IH0",
+    "N"
+  ],
+  "GPTQ-INT": [
+    "JH",
+    "IY1",
+    "P",
+    "IY1",
+    "T",
+    "IY1",
+    "K",
+    "Y",
+    "UW1",
+    "IH1",
+    "N",
+    "T"
+  ],
+  "REDHATAI": [
+    "R",
+    "EH1",
+    "D",
+    "HH",
+    "AE1",
+    "T",
+    "EY1",
+    "AY1"
+  ],
+  "AUDIOTECHNICA": [
+    "AO1",
+    "D",
+    "IY0",
+    "OW0",
+    "T",
+    "EH1",
+    "K",
+    "N",
+    "IH0",
+    "K",
+    "AH0"
+  ],
+  "STEAMDECK": [
+    "S",
+    "T",
+    "IY1",
+    "M",
+    "D",
+    "EH1",
+    "K"
+  ],
+  "OPENCL": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "S",
+    "IY1",
+    "EH1",
+    "L"
+  ],
+  "OPENBLAS": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "B",
+    "L",
+    "AE1",
+    "S"
+  ],
+  "FASTSURFER": [
+    "F",
+    "AE1",
+    "S",
+    "T",
+    "S",
+    "ER1",
+    "F",
+    "ER0"
+  ],
+  "FREESURFER": [
+    "F",
+    "R",
+    "IY1",
+    "S",
+    "ER1",
+    "F",
+    "ER0"
+  ],
+  "DEVSTREAM": [
+    "D",
+    "EH1",
+    "V",
+    "S",
+    "T",
+    "R",
+    "IY1",
+    "M"
+  ],
+  "KITOPS": [
+    "K",
+    "IH1",
+    "T",
+    "AA1",
+    "P",
+    "S"
+  ],
+  "LINUXKIT": [
+    "L",
+    "IH1",
+    "N",
+    "AH0",
+    "K",
+    "S",
+    "K",
+    "IH1",
+    "T"
+  ],
+  "CONTAINERSSH": [
+    "K",
+    "AH0",
+    "N",
+    "T",
+    "EY1",
+    "N",
+    "ER0",
+    "EH1",
+    "S",
+    "EH1",
+    "S",
+    "EY1",
+    "CH"
+  ],
+  "KUBE-HUNTER": [
+    "K",
+    "UW1",
+    "B",
+    "HH",
+    "AH1",
+    "N",
+    "T",
+    "ER0"
+  ],
+  "MORESEC": [
+    "M",
+    "AO1",
+    "R",
+    "S",
+    "EH1",
+    "K"
+  ],
+  "UL": [
+    "Y",
+    "UW1",
+    "EH1",
+    "L"
+  ],
+  "SENSEVOICE": [
+    "S",
+    "EH1",
+    "N",
+    "S",
+    "V",
+    "OY1",
+    "S"
+  ],
+  "MOE": [
+    "EH1",
+    "M",
+    "OW1",
+    "IY1"
+  ],
+  "FLASHATTENTION": [
+    "F",
+    "L",
+    "AE1",
+    "SH",
+    "AH0",
+    "T",
+    "EH1",
+    "N",
+    "SH",
+    "AH0",
+    "N"
+  ],
+  "SWIGLU": [
+    "S",
+    "W",
+    "IH1",
+    "G",
+    "L",
+    "UW0"
+  ],
+  "STYLEGAN": [
+    "S",
+    "T",
+    "AY1",
+    "L",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "HUMANEVAL": [
+    "HH",
+    "Y",
+    "UW1",
+    "M",
+    "AH0",
+    "N",
+    "IH0",
+    "V",
+    "AE1",
+    "L"
+  ],
+  "SUPERGLUE": [
+    "S",
+    "UW1",
+    "P",
+    "ER0",
+    "G",
+    "L",
+    "UW1"
+  ],
+  "HELLASWAG": [
+    "HH",
+    "EH1",
+    "L",
+    "AH0",
+    "S",
+    "W",
+    "AE1",
+    "G"
+  ],
+  "OPENVINO": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "V",
+    "IY1",
+    "N",
+    "OW0"
+  ],
+  "MUONCLIP": [
+    "M",
+    "Y",
+    "UW1",
+    "AA0",
+    "N",
+    "K",
+    "L",
+    "IH1",
+    "P"
+  ],
+  "SELF-PLAY": [
+    "S",
+    "EH1",
+    "L",
+    "F",
+    "P",
+    "L",
+    "EY1"
+  ],
+  "INTERPOLATION": [
+    "IH2",
+    "T",
+    "ER2",
+    "P",
+    "AH0",
+    "L",
+    "EY1",
+    "SH",
+    "AH0",
+    "N"
+  ],
+  "AMC": [
+    "EY1",
+    "EH1",
+    "M",
+    "S",
+    "IY1"
+  ],
+  "WEBARENA": [
+    "W",
+    "EH1",
+    "B",
+    "ER0",
+    "IY1",
+    "N",
+    "AH0"
+  ],
+  "CRUXEVAL": [
+    "K",
+    "R",
+    "AH1",
+    "K",
+    "S",
+    "IH0",
+    "V",
+    "AE1",
+    "L"
+  ],
+  "SCICODE": [
+    "S",
+    "AY1",
+    "K",
+    "OW1",
+    "D"
+  ],
+  "FRONTIERMATH": [
+    "F",
+    "R",
+    "AH1",
+    "N",
+    "T",
+    "IH0",
+    "R",
+    "M",
+    "AE1",
+    "TH"
+  ],
+  "DEEPSWE": [
+    "D",
+    "IY1",
+    "P",
+    "S",
+    "W",
+    "IY1"
+  ],
+  "SWE-SMITH": [
+    "S",
+    "W",
+    "IY1",
+    "S",
+    "M",
+    "IH1",
+    "TH"
+  ],
+  "ATCODER": [
+    "AE1",
+    "T",
+    "K",
+    "OW1",
+    "D",
+    "ER0"
+  ],
+  "MMACTION": [
+    "EH1",
+    "M",
+    "EH1",
+    "M",
+    "AE1",
+    "K",
+    "SH",
+    "AH0",
+    "N"
+  ],
+  "PROMPTLAYER": [
+    "P",
+    "R",
+    "AA1",
+    "M",
+    "P",
+    "T",
+    "L",
+    "EY1",
+    "ER0"
+  ],
+  "CLUSTERIP": [
+    "K",
+    "L",
+    "AH1",
+    "S",
+    "T",
+    "ER0",
+    "AY1",
+    "P",
+    "IY1"
+  ],
+  "NODEPORT": [
+    "N",
+    "OW1",
+    "D",
+    "P",
+    "AO1",
+    "R",
+    "T"
+  ],
+  "CRONJOB": [
+    "K",
+    "R",
+    "AA1",
+    "N",
+    "JH",
+    "AA1",
+    "B"
+  ],
+  "DEVOPS": [
+    "D",
+    "EH1",
+    "V",
+    "AA2",
+    "P",
+    "S"
+  ],
+  "SALTSTACK": [
+    "S",
+    "AO1",
+    "L",
+    "T",
+    "S",
+    "T",
+    "AE1",
+    "K"
+  ],
+  "PINOT": [
+    "P",
+    "IH1",
+    "N",
+    "OW0"
+  ],
+  "WEBSOCKET": [
+    "W",
+    "EH1",
+    "B",
+    "S",
+    "AA1",
+    "K",
+    "AH0",
+    "T"
+  ],
+  "POWERSHELL": [
+    "P",
+    "AW1",
+    "ER0",
+    "SH",
+    "EH1",
+    "L"
+  ],
+  "WEBASSEMBLY": [
+    "W",
+    "EH1",
+    "B",
+    "AH0",
+    "S",
+    "EH1",
+    "M",
+    "B",
+    "L",
+    "IY0"
+  ],
+  "SERVER-SENT": [
+    "S",
+    "ER1",
+    "V",
+    "ER0",
+    "S",
+    "EH1",
+    "N",
+    "T"
+  ],
+  "FAAS": [
+    "F",
+    "AA1",
+    "S"
+  ],
+  "VESPA": [
+    "V",
+    "EH1",
+    "S",
+    "P",
+    "AH0"
+  ],
+  "BABYAGI": [
+    "B",
+    "EY1",
+    "B",
+    "IY0",
+    "EY1",
+    "JH",
+    "IY1",
+    "AY1"
+  ],
+  "OPENSTACK": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "S",
+    "T",
+    "AE1",
+    "K"
+  ],
+  "OPENFLOW": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "F",
+    "L",
+    "OW0"
+  ],
+  "SA": [
+    "EH1",
+    "S",
+    "EY1"
+  ],
+  "OPC-UA": [
+    "OW1",
+    "P",
+    "IY1",
+    "S",
+    "IY1",
+    "Y",
+    "UW1",
+    "EY1"
+  ],
+  "MUJOCO": [
+    "M",
+    "UW1",
+    "JH",
+    "OW0",
+    "K",
+    "OW0"
+  ],
+  "MOVEIT": [
+    "M",
+    "UW1",
+    "V",
+    "IH1",
+    "T"
+  ],
+  "MULTI-INSTANCE": [
+    "M",
+    "AH1",
+    "L",
+    "T",
+    "IY0",
+    "IH1",
+    "N",
+    "S",
+    "T",
+    "AH0",
+    "N",
+    "S"
+  ],
+  "SELF-CRITIQUE": [
+    "S",
+    "EH1",
+    "L",
+    "F",
+    "K",
+    "R",
+    "IH0",
+    "T",
+    "IY1",
+    "K"
+  ],
+  "MULTI-AZ": [
+    "M",
+    "AH1",
+    "L",
+    "T",
+    "IY0",
+    "EY1",
+    "Z",
+    "IY1"
+  ],
+  "TESTNG": [
+    "T",
+    "EH1",
+    "S",
+    "T",
+    "EH1",
+    "N",
+    "JH",
+    "IY1"
+  ],
+  "NATGATEWAY": [
+    "N",
+    "AE1",
+    "T",
+    "G",
+    "EY1",
+    "T",
+    "W",
+    "EY2"
+  ],
+  "CLOUDSHELL": [
+    "K",
+    "L",
+    "AW1",
+    "D",
+    "SH",
+    "EH1",
+    "L"
+  ],
+  "MIGRATIONHUB": [
+    "M",
+    "AY0",
+    "G",
+    "R",
+    "EY1",
+    "SH",
+    "AH0",
+    "N",
+    "HH",
+    "AH1",
+    "B"
+  ],
+  "ST": [
+    "EH1",
+    "S",
+    "T",
+    "IY1"
+  ],
+  "SPOTINSTANCE": [
+    "S",
+    "P",
+    "AA1",
+    "T",
+    "IH1",
+    "N",
+    "S",
+    "T",
+    "AH0",
+    "N",
+    "S"
+  ],
+  "PLACEMENTGROUP": [
+    "P",
+    "L",
+    "EY1",
+    "S",
+    "M",
+    "AH0",
+    "N",
+    "T",
+    "G",
+    "R",
+    "UW1",
+    "P"
+  ],
+  "ENA": [
+    "IY1",
+    "EH1",
+    "N",
+    "EY1"
+  ],
+  "ENAEXPRESS": [
+    "IY1",
+    "EH1",
+    "N",
+    "EY1",
+    "IH0",
+    "K",
+    "S",
+    "P",
+    "R",
+    "EH1",
+    "S"
+  ],
+  "THREATMAPPER": [
+    "TH",
+    "R",
+    "EH1",
+    "T",
+    "M",
+    "AE2",
+    "P",
+    "ER0"
+  ],
+  "TIGERA": [
+    "T",
+    "IH0",
+    "G",
+    "EH1",
+    "R",
+    "AH0"
+  ],
+  "VARMOR": [
+    "V",
+    "IY1",
+    "AA1",
+    "R",
+    "M",
+    "ER0"
+  ],
+  "ORY": [
+    "OW1",
+    "R",
+    "IY0"
+  ],
+  "DATENLORD": [
+    "D",
+    "AA1",
+    "T",
+    "AH0",
+    "N",
+    "L",
+    "AO1",
+    "R",
+    "D"
+  ],
+  "QINGSTOR": [
+    "CH",
+    "IH1",
+    "NG",
+    "S",
+    "T",
+    "AO2",
+    "R"
+  ],
+  "KUBESTELLAR": [
+    "K",
+    "Y",
+    "UW1",
+    "B",
+    "S",
+    "T",
+    "EH1",
+    "L",
+    "ER0"
+  ],
+  "GO-ZERO": [
+    "G",
+    "OW1",
+    "Z",
+    "IH1",
+    "R",
+    "OW0"
+  ],
+  "KRATOS": [
+    "K",
+    "R",
+    "EY1",
+    "T",
+    "AA0",
+    "S"
+  ],
+  "GRAPHSCOPE": [
+    "G",
+    "R",
+    "AE1",
+    "F",
+    "S",
+    "K",
+    "OW2",
+    "P"
+  ],
+  "HANA": [
+    "HH",
+    "AA1",
+    "N",
+    "AH0"
+  ],
+  "AG": [
+    "EY1",
+    "JH",
+    "IY1"
+  ],
+  "CARVEL": [
+    "K",
+    "AA1",
+    "R",
+    "V",
+    "AH0",
+    "L"
+  ],
+  "KUBEPLUS": [
+    "K",
+    "Y",
+    "UW1",
+    "B",
+    "P",
+    "L",
+    "AH0",
+    "S"
+  ],
+  "CLOUDTTY": [
+    "K",
+    "L",
+    "AW1",
+    "D",
+    "T",
+    "IY1",
+    "T",
+    "IY1",
+    "W",
+    "AY1"
+  ],
+  "OPENCHOREO": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "K",
+    "AO1",
+    "R",
+    "IY0",
+    "OW0"
+  ],
+  "BOCLOUD": [
+    "B",
+    "OW1",
+    "K",
+    "L",
+    "AW2",
+    "D"
+  ],
+  "DAOCLOUD": [
+    "D",
+    "AW1",
+    "K",
+    "L",
+    "AW2",
+    "D"
+  ],
+  "EASYSTACK": [
+    "IY1",
+    "Z",
+    "IY0",
+    "S",
+    "T",
+    "AE2",
+    "K"
+  ],
+  "WIND": [
+    "W",
+    "IH1",
+    "N",
+    "D"
+  ],
+  "AME": [
+    "EY1",
+    "EH1",
+    "M",
+    "IY1"
+  ],
+  "OS": [
+    "OW1",
+    "EH1",
+    "S"
+  ],
+  "STARLINGX": [
+    "S",
+    "T",
+    "AA1",
+    "R",
+    "L",
+    "IH0",
+    "NG",
+    "EH2",
+    "K",
+    "S"
+  ],
+  "EVENTMESH": [
+    "IH0",
+    "V",
+    "EH1",
+    "N",
+    "T",
+    "M",
+    "EH2",
+    "SH"
+  ],
+  "APPSCALE": [
+    "AE1",
+    "P",
+    "S",
+    "K",
+    "EY2",
+    "L"
+  ],
+  "STORMFORGE": [
+    "S",
+    "T",
+    "AO1",
+    "R",
+    "M",
+    "F",
+    "AO2",
+    "R",
+    "JH"
+  ],
+  "APPOPTICS": [
+    "AE1",
+    "P",
+    "AA1",
+    "P",
+    "T",
+    "IH0",
+    "K",
+    "S"
+  ],
+  "ELASTIFLOW": [
+    "IH0",
+    "L",
+    "AE1",
+    "S",
+    "T",
+    "IH0",
+    "F",
+    "L",
+    "OW2"
+  ],
+  "OPENLIT": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "L",
+    "IH2",
+    "T"
+  ],
+  "OPENTRACING": [
+    "OW1",
+    "P",
+    "AH0",
+    "N",
+    "T",
+    "R",
+    "EY1",
+    "S",
+    "IH0",
+    "NG"
+  ],
+  "CLOUDHEALTH": [
+    "K",
+    "L",
+    "AW1",
+    "D",
+    "HH",
+    "EH2",
+    "L",
+    "TH"
+  ],
+  "CLOUDOPS": [
+    "K",
+    "L",
+    "AW1",
+    "D",
+    "AA2",
+    "P",
+    "S"
+  ],
+  "SOKUBE": [
+    "S",
+    "OW1",
+    "K",
+    "Y",
+    "UW1",
+    "B"
+  ],
+  "WASMER": [
+    "W",
+    "AA1",
+    "Z",
+    "M",
+    "ER0"
+  ],
+  "WAI": [
+    "D",
+    "AH1",
+    "B",
+    "AH0",
+    "L",
+    "Y",
+    "UW0",
+    "EY1",
+    "AY1"
+  ],
+  "WASM-PACK": [
+    "W",
+    "AA1",
+    "Z",
+    "AH0",
+    "M",
+    "P",
+    "AE1",
+    "K"
+  ],
+  "QUAI": [
+    "K",
+    "W",
+    "AY1"
+  ],
+  "TRULENS": [
+    "T",
+    "R",
+    "UW1",
+    "L",
+    "EH2",
+    "N",
+    "Z"
+  ],
+  "AIBRIX": [
+    "EY1",
+    "AY1",
+    "B",
+    "R",
+    "IH0",
+    "K",
+    "S"
+  ],
+  "CARNICE-V": [
+    "K",
+    "AA1",
+    "R",
+    "N",
+    "IY0",
+    "S",
+    "V",
+    "IY1"
+  ],
+  "LITE-INSTRUCT": [
+    "L",
+    "AY1",
+    "T",
+    "IH2",
+    "N",
+    "S",
+    "T",
+    "R",
+    "AH1",
+    "K",
+    "T"
+  ],
+  "FINAL-BENCH": [
+    "F",
+    "AY1",
+    "N",
+    "AH0",
+    "L",
+    "B",
+    "EH1",
+    "N",
+    "CH"
+  ],
+  "BASE-FT": [
+    "B",
+    "EY1",
+    "S",
+    "EH1",
+    "F",
+    "T",
+    "IY1"
+  ],
+  "AWQ-INT": [
+    "EY1",
+    "D",
+    "AH1",
+    "B",
+    "AH0",
+    "L",
+    "Y",
+    "UW0",
+    "K",
+    "Y",
+    "UW1",
+    "IH1",
+    "N",
+    "T"
+  ],
+  "CODE-GGUF": [
+    "K",
+    "OW1",
+    "D",
+    "JH",
+    "IY1",
+    "JH",
+    "IY1",
+    "Y",
+    "UW1",
+    "EH1",
+    "F"
+  ],
+  "DEV-GGUF": [
+    "D",
+    "EH1",
+    "V",
+    "JH",
+    "IY1",
+    "JH",
+    "IY1",
+    "Y",
+    "UW1",
+    "EH1",
+    "F"
+  ],
+  "E-INSTRUCT": [
+    "IY1",
+    "IH0",
+    "N",
+    "S",
+    "T",
+    "R",
+    "AH1",
+    "K",
+    "T"
+  ],
+  "MIMO-V": [
+    "M",
+    "IY1",
+    "M",
+    "OW0",
+    "V",
+    "IY1"
+  ],
+  "NANO-OMNI": [
+    "N",
+    "AA1",
+    "N",
+    "OW0",
+    "AA1",
+    "M",
+    "N",
+    "IY0"
+  ],
+  "K-INSTRUCT": [
+    "K",
+    "EY1",
+    "IH0",
+    "N",
+    "S",
+    "T",
+    "R",
+    "AH1",
+    "K",
+    "T"
+  ],
+  "MOE-A": [
+    "EH1",
+    "M",
+    "OW1",
+    "IY1",
+    "EY1"
+  ],
+  "CODER-NEXT": [
+    "K",
+    "OW1",
+    "D",
+    "ER0",
+    "N",
+    "EH1",
+    "K",
+    "S",
+    "T"
+  ],
+  "DISTILL-V": [
+    "D",
+    "IH0",
+    "S",
+    "T",
+    "IH1",
+    "L",
+    "V",
+    "IY1"
+  ],
+  "READYART": [
+    "R",
+    "EH1",
+    "D",
+    "IY0",
+    "AA1",
+    "R",
+    "T"
+  ],
+  "GEMMA-GGUF": [
+    "JH",
+    "EH1",
+    "M",
+    "AH0",
+    "JH",
+    "IY1",
+    "JH",
+    "IY1",
+    "Y",
+    "UW1",
+    "EH1",
+    "F"
+  ],
+  "ORNITH-AI": [
+    "AO1",
+    "R",
+    "N",
+    "IH0",
+    "TH",
+    "EY2",
+    "AY1"
+  ],
+  "ATA": [
+    "EY1",
+    "T",
+    "IY1",
+    "EY1"
+  ],
+  "ADS": [
+    "EY1",
+    "D",
+    "IY1",
+    "EH1",
+    "S"
+  ],
+  "ADS-TEC": [
+    "EY1",
+    "D",
+    "IY1",
+    "EH1",
+    "S",
+    "T",
+    "EH1",
+    "K"
+  ],
+  "ADSS": [
+    "EY1",
+    "D",
+    "IY1",
+    "EH1",
+    "S",
+    "IH0",
+    "Z"
+  ],
+  "AIRSCULPT": [
+    "EH1",
+    "R",
+    "S",
+    "K",
+    "AH2",
+    "L",
+    "P",
+    "T"
+  ],
+  "ADLAI": [
+    "AE1",
+    "D",
+    "L",
+    "AY0"
+  ],
+  "APPFOLIO": [
+    "AE1",
+    "P",
+    "F",
+    "OW1",
+    "L",
+    "IY0",
+    "OW0"
+  ],
+  "ARES": [
+    "EH1",
+    "R",
+    "IY0",
+    "Z"
+  ],
+  "SE": [
+    "EH1",
+    "S",
+    "IY1"
+  ],
+  "ASP": [
+    "EY1",
+    "EH1",
+    "S",
+    "P",
+    "IY1"
+  ],
+  "AMERISERV": [
+    "AH0",
+    "M",
+    "EH1",
+    "R",
+    "IH0",
+    "S",
+    "ER2",
+    "V"
+  ],
+  "AGAPE": [
+    "AH0",
+    "G",
+    "AA1",
+    "P",
+    "EY2"
+  ],
+  "PRODUCE": [
+    "P",
+    "R",
+    "AA1",
+    "D",
+    "UW0",
+    "S"
+  ],
+  "AXT": [
+    "EY1",
+    "EH1",
+    "K",
+    "S",
+    "T",
+    "IY1"
+  ],
+  "ARROWMARK": [
+    "AE1",
+    "R",
+    "OW0",
+    "M",
+    "AA2",
+    "R",
+    "K"
+  ],
+  "CONCRETE": [
+    "K",
+    "AA1",
+    "N",
+    "K",
+    "R",
+    "IY2",
+    "T"
+  ],
+  "BIOAFFINITY": [
+    "B",
+    "AY2",
+    "OW0",
+    "AH0",
+    "F",
+    "IH1",
+    "N",
+    "AH0",
+    "T",
+    "IY0"
+  ],
+  "BELIVE": [
+    "B",
+    "IY1",
+    "L",
+    "AY1",
+    "V"
+  ],
+  "BRANCHOUT": [
+    "B",
+    "R",
+    "AE1",
+    "N",
+    "CH",
+    "AW2",
+    "T"
+  ],
+  "BITVENTURES": [
+    "B",
+    "IH1",
+    "T",
+    "V",
+    "EH1",
+    "N",
+    "CH",
+    "ER0",
+    "Z"
+  ],
+  "BRAINSWAY": [
+    "B",
+    "R",
+    "EY1",
+    "N",
+    "Z",
+    "W",
+    "EY2"
+  ],
+  "CARIS": [
+    "K",
+    "EH1",
+    "R",
+    "IH0",
+    "S"
+  ],
+  "CAL-MAINE": [
+    "K",
+    "AE1",
+    "L",
+    "M",
+    "EY1",
+    "N"
+  ],
+  "XI": [
+    "EH1",
+    "K",
+    "S",
+    "AY1"
+  ],
+  "VI": [
+    "V",
+    "IY1",
+    "AY1"
+  ],
+  "CERUS": [
+    "S",
+    "IH1",
+    "R",
+    "AH0",
+    "S"
+  ],
+  "DI": [
+    "D",
+    "IY1",
+    "AY1"
+  ],
+  "VITA": [
+    "V",
+    "IY1",
+    "T",
+    "AH0"
+  ],
+  "CORVEL": [
+    "K",
+    "AO1",
+    "R",
+    "V",
+    "EH1",
+    "L"
+  ],
+  "COINSHARES": [
+    "K",
+    "OY1",
+    "N",
+    "SH",
+    "EH1",
+    "R",
+    "Z"
+  ],
+  "CID": [
+    "S",
+    "IY1",
+    "AY1",
+    "D",
+    "IY1"
+  ],
+  "AB": [
+    "EY1",
+    "B",
+    "IY1"
+  ],
+  "ESCALADE": [
+    "EH1",
+    "S",
+    "K",
+    "AH0",
+    "L",
+    "EY2",
+    "D"
+  ],
+  "BANCSYSTEM": [
+    "B",
+    "AE1",
+    "NG",
+    "K",
+    "S",
+    "IH1",
+    "S",
+    "T",
+    "AH0",
+    "M"
+  ],
+  "ONE-HALF": [
+    "W",
+    "AH1",
+    "N",
+    "HH",
+    "AE1",
+    "F"
+  ],
+  "FISERV": [
+    "F",
+    "AY1",
+    "S",
+    "ER0",
+    "V"
+  ],
+  "FAETH": [
+    "F",
+    "EY1",
+    "EH0",
+    "TH"
+  ],
+  "GAMESQUARE": [
+    "G",
+    "EY1",
+    "M",
+    "S",
+    "K",
+    "W",
+    "EH1",
+    "R"
+  ],
+  "GLOBAL-E": [
+    "G",
+    "L",
+    "OW1",
+    "B",
+    "AH0",
+    "L",
+    "IY1"
+  ],
+  "GEOVAX": [
+    "JH",
+    "IY1",
+    "OW0",
+    "V",
+    "AE1",
+    "K",
+    "S"
+  ],
+  "GYRODYNE": [
+    "JH",
+    "AY1",
+    "R",
+    "OW0",
+    "D",
+    "AY1",
+    "N"
+  ],
+  "CONVERT": [
+    "K",
+    "AH0",
+    "N",
+    "V",
+    "ER1",
+    "T"
+  ],
+  "HEARTSCIENCES": [
+    "HH",
+    "AA1",
+    "R",
+    "T",
+    "S",
+    "AY1",
+    "AH0",
+    "N",
+    "S",
+    "AH0",
+    "Z"
+  ],
+  "HIGH-TREND": [
+    "HH",
+    "AY1",
+    "T",
+    "R",
+    "EH1",
+    "N",
+    "D"
+  ],
+  "IB": [
+    "AY1",
+    "B",
+    "IY1"
+  ],
+  "IMMUCELL": [
+    "IH1",
+    "M",
+    "Y",
+    "UW0",
+    "S",
+    "EH1",
+    "L"
+  ],
+  "IM": [
+    "AY1",
+    "EH1",
+    "M"
+  ],
+  "INMODE": [
+    "IH1",
+    "N",
+    "M",
+    "OW1",
+    "D"
+  ],
+  "INNOVAGE": [
+    "IH1",
+    "N",
+    "AH0",
+    "V",
+    "EY1",
+    "JH"
+  ],
+  "INTER": [
+    "IH1",
+    "N",
+    "T",
+    "ER0"
+  ],
+  "IP": [
+    "AY1",
+    "P",
+    "IY1"
+  ],
+  "JE": [
+    "JH",
+    "EY1",
+    "IY1"
+  ],
+  "KEWAUNEE": [
+    "K",
+    "AH0",
+    "W",
+    "AA1",
+    "N",
+    "IY0"
+  ],
+  "KEARNY": [
+    "K",
+    "AA1",
+    "R",
+    "N",
+    "IY0"
+  ],
+  "SOWELL": [
+    "S",
+    "OW1",
+    "W",
+    "EH1",
+    "L"
+  ],
+  "LEAD": [
+    "L",
+    "IY1",
+    "D"
+  ],
+  "LEXINFINTECH": [
+    "L",
+    "EH1",
+    "K",
+    "S",
+    "IH0",
+    "N",
+    "F",
+    "IH1",
+    "N",
+    "T",
+    "EH2",
+    "K"
+  ],
+  "MASTERBEEF": [
+    "M",
+    "AE1",
+    "S",
+    "T",
+    "ER0",
+    "B",
+    "IY1",
+    "F"
+  ],
+  "MASTERCRAFT": [
+    "M",
+    "AE1",
+    "S",
+    "T",
+    "ER0",
+    "K",
+    "R",
+    "AE1",
+    "F",
+    "T"
+  ],
+  "SERES": [
+    "S",
+    "IH1",
+    "R",
+    "IY0",
+    "Z"
+  ],
+  "MEDIWOUND": [
+    "M",
+    "EH1",
+    "D",
+    "IY0",
+    "W",
+    "UW1",
+    "N",
+    "D"
+  ],
+  "MARKETWISE": [
+    "M",
+    "AA1",
+    "R",
+    "K",
+    "AH0",
+    "T",
+    "W",
+    "AY1",
+    "Z"
+  ],
+  "MAPLIGHT": [
+    "M",
+    "AE1",
+    "P",
+    "L",
+    "AY1",
+    "T"
+  ],
+  "MAXLINEAR": [
+    "M",
+    "AE1",
+    "K",
+    "S",
+    "L",
+    "IH1",
+    "N",
+    "IY0",
+    "ER0"
+  ],
+  "NETSCOUT": [
+    "N",
+    "EH1",
+    "T",
+    "S",
+    "K",
+    "AW1",
+    "T"
+  ],
+  "ONKURE": [
+    "AA1",
+    "N",
+    "K",
+    "Y",
+    "UH1",
+    "R"
+  ],
+  "ONECONSTRUCTION": [
+    "W",
+    "AH1",
+    "N",
+    "K",
+    "AH0",
+    "N",
+    "S",
+    "T",
+    "R",
+    "AH1",
+    "K",
+    "SH",
+    "AH0",
+    "N"
+  ],
+  "OP": [
+    "OW1",
+    "P",
+    "IY1"
+  ],
+  "ONESPAN": [
+    "W",
+    "AH1",
+    "N",
+    "S",
+    "P",
+    "AE1",
+    "N"
+  ],
+  "CA": [
+    "S",
+    "IY1",
+    "EY1"
+  ],
+  "SU": [
+    "EH1",
+    "S",
+    "Y",
+    "UW1"
+  ],
+  "UY": [
+    "Y",
+    "UW1",
+    "W",
+    "AY1"
+  ],
+  "EM": [
+    "IY1",
+    "EH1",
+    "M"
+  ],
+  "BOA": [
+    "B",
+    "IY1",
+    "OW1",
+    "EY1"
+  ],
+  "ABCS": [
+    "EY1",
+    "B",
+    "IY1",
+    "S",
+    "IY1",
+    "EH1",
+    "S"
+  ],
+  "PLA": [
+    "P",
+    "IY1",
+    "EH1",
+    "L",
+    "EY1"
+  ],
+  "GENZ": [
+    "JH",
+    "EH1",
+    "N",
+    "Z",
+    "IY1"
+  ],
+  "SOW": [
+    "S",
+    "OW1"
+  ],
+  "LEVERAGED": [
+    "L",
+    "EH1",
+    "V",
+    "ER0",
+    "IH0",
+    "JH",
+    "D"
+  ],
+  "REPLIGEN": [
+    "R",
+    "EH1",
+    "P",
+    "L",
+    "IH0",
+    "JH",
+    "AH0",
+    "N"
+  ],
+  "GOURMET": [
+    "G",
+    "UH0",
+    "R",
+    "M",
+    "EY1"
+  ],
+  "AUREUS": [
+    "AO1",
+    "R",
+    "IY0",
+    "AH0",
+    "S"
+  ],
+  "PETMED": [
+    "P",
+    "EH1",
+    "T",
+    "M",
+    "EH2",
+    "D"
+  ],
+  "SMARTKEM": [
+    "S",
+    "M",
+    "AA1",
+    "R",
+    "T",
+    "K",
+    "EH2",
+    "M"
+  ],
+  "PARK-OHIO": [
+    "P",
+    "AA1",
+    "R",
+    "K",
+    "OW0",
+    "HH",
+    "AY1",
+    "OW0"
+  ],
+  "PRICESMART": [
+    "P",
+    "R",
+    "AY1",
+    "S",
+    "S",
+    "M",
+    "AA1",
+    "R",
+    "T"
+  ],
+  "QUICKLOGIC": [
+    "K",
+    "W",
+    "IH1",
+    "K",
+    "L",
+    "AA1",
+    "JH",
+    "IH0",
+    "K"
+  ],
+  "SCISPARC": [
+    "S",
+    "AY1",
+    "S",
+    "P",
+    "AA1",
+    "R",
+    "K"
+  ],
+  "SPACSPHERE": [
+    "S",
+    "P",
+    "AE1",
+    "K",
+    "S",
+    "F",
+    "IH1",
+    "R"
+  ],
+  "SURGEPAYS": [
+    "S",
+    "ER1",
+    "JH",
+    "P",
+    "EY1",
+    "Z"
+  ],
+  "TRIO-TECH": [
+    "T",
+    "R",
+    "IY1",
+    "OW0",
+    "T",
+    "EH2",
+    "K"
+  ],
+  "TRUGOLF": [
+    "T",
+    "R",
+    "UW1",
+    "G",
+    "AA1",
+    "L",
+    "F"
+  ],
+  "VERIFYME": [
+    "V",
+    "EH1",
+    "R",
+    "AH0",
+    "F",
+    "AY2",
+    "M",
+    "IY1"
+  ],
+  "VERISIGN": [
+    "V",
+    "EH1",
+    "R",
+    "IH0",
+    "S",
+    "AY2",
+    "N"
+  ],
+  "VIASAT": [
+    "V",
+    "AY1",
+    "AH0",
+    "S",
+    "AE2",
+    "T"
+  ],
+  "VIVOPOWER": [
+    "V",
+    "IY1",
+    "V",
+    "OW0",
+    "P",
+    "AW2",
+    "ER0"
+  ],
+  "WILLSCOT": [
+    "W",
+    "IH1",
+    "L",
+    "S",
+    "K",
+    "AA2",
+    "T"
+  ],
+  "J-STAR": [
+    "JH",
+    "EY1",
+    "S",
+    "T",
+    "AA1",
+    "R"
+  ],
+  "DIRECTBOOKING": [
+    "D",
+    "ER0",
+    "EH1",
+    "K",
+    "T",
+    "B",
+    "UH1",
+    "K",
+    "IH0",
+    "NG"
+  ],
+  "SMALL-MID": [
+    "S",
+    "M",
+    "AO1",
+    "L",
+    "M",
+    "IH1",
+    "D"
+  ],
+  "ULTRASHORT": [
+    "AH1",
+    "L",
+    "T",
+    "R",
+    "AH0",
+    "SH",
+    "AO1",
+    "R",
+    "T"
+  ],
+  "CORECOMMODITY": [
+    "K",
+    "AO1",
+    "R",
+    "K",
+    "AH0",
+    "M",
+    "AA1",
+    "D",
+    "AH0",
+    "T",
+    "IY0"
+  ],
+  "SUPERDIVIDEND": [
+    "S",
+    "UW1",
+    "P",
+    "ER0",
+    "D",
+    "IH1",
+    "V",
+    "IH0",
+    "D",
+    "EH2",
+    "N",
+    "D"
+  ],
+  "ALPHADROID": [
+    "AE1",
+    "L",
+    "F",
+    "AH0",
+    "D",
+    "R",
+    "OY1",
+    "D"
+  ],
+  "EX-US": [
+    "EH1",
+    "K",
+    "S",
+    "Y",
+    "UW1",
+    "EH1",
+    "S"
+  ],
+  "WESTEND": [
+    "W",
+    "EH1",
+    "S",
+    "T",
+    "EH1",
+    "N",
+    "D"
+  ],
+  "INSPEREX": [
+    "IH0",
+    "N",
+    "S",
+    "P",
+    "IH1",
+    "R",
+    "EH2",
+    "K",
+    "S"
+  ],
+  "STOCKSNIPS": [
+    "S",
+    "T",
+    "AA1",
+    "K",
+    "S",
+    "N",
+    "IH1",
+    "P",
+    "S"
+  ],
+  "PUREPLAY": [
+    "P",
+    "Y",
+    "UH1",
+    "R",
+    "P",
+    "L",
+    "EY1"
+  ],
+  "PEAKSHARES": [
+    "P",
+    "IY1",
+    "K",
+    "SH",
+    "EH1",
+    "R",
+    "Z"
+  ],
+  "ROCKCREEK": [
+    "R",
+    "AA1",
+    "K",
+    "K",
+    "R",
+    "IY1",
+    "K"
+  ],
+  "ULTRAPRO": [
+    "AH1",
+    "L",
+    "T",
+    "R",
+    "AH0",
+    "P",
+    "R",
+    "OW1"
+  ],
+  "TIMESSQUARE": [
+    "T",
+    "AY1",
+    "M",
+    "Z",
+    "S",
+    "K",
+    "W",
+    "EH1",
+    "R"
+  ],
+  "EX-MAG": [
+    "EH1",
+    "K",
+    "S",
+    "M",
+    "AE1",
+    "G"
+  ],
+  "DEPTH-WISE": [
+    "D",
+    "EH1",
+    "P",
+    "TH",
+    "W",
+    "AY1",
+    "Z"
+  ],
+  "CW-ERM": [
+    "S",
+    "IY1",
+    "D",
+    "AH1",
+    "B",
+    "AH0",
+    "L",
+    "Y",
+    "UW0",
+    "ER1",
+    "M"
+  ],
+  "OVER-SAMPLING": [
+    "OW1",
+    "V",
+    "ER0",
+    "S",
+    "AE1",
+    "M",
+    "P",
+    "L",
+    "IH0",
+    "NG"
+  ],
+  "BI-DIRECTIONAL": [
+    "B",
+    "AY2",
+    "D",
+    "ER0",
+    "EH1",
+    "K",
+    "SH",
+    "AH0",
+    "N",
+    "AH0",
+    "L"
+  ],
+  "LUFTHANSA": [
+    "L",
+    "UH1",
+    "F",
+    "T",
+    "HH",
+    "AA2",
+    "N",
+    "S",
+    "AH0"
+  ],
+  "CASCADEPSP": [
+    "K",
+    "AE0",
+    "S",
+    "K",
+    "EY1",
+    "D",
+    "P",
+    "IY1",
+    "EH1",
+    "S",
+    "P",
+    "IY1"
+  ],
+  "GRAPHSAINT": [
+    "G",
+    "R",
+    "AE1",
+    "F",
+    "S",
+    "EY1",
+    "N",
+    "T"
+  ],
+  "MULTI-ATTENTION": [
+    "M",
+    "AH1",
+    "L",
+    "T",
+    "IY0",
+    "AH0",
+    "T",
+    "EH1",
+    "N",
+    "SH",
+    "AH0",
+    "N"
+  ],
+  "POAPL": [
+    "P",
+    "OW1",
+    "EY1",
+    "P",
+    "IY1",
+    "EH1",
+    "L"
+  ],
+  "CONVNET": [
+    "K",
+    "AA1",
+    "N",
+    "V",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "RANK-BASED": [
+    "R",
+    "AE1",
+    "NG",
+    "K",
+    "B",
+    "EY1",
+    "S",
+    "T"
+  ],
+  "RANDSOL": [
+    "R",
+    "AE1",
+    "N",
+    "D",
+    "S",
+    "AA1",
+    "L"
+  ],
+  "HIFI-GAN": [
+    "HH",
+    "AY1",
+    "F",
+    "AY1",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "DETUNING": [
+    "D",
+    "IY1",
+    "T",
+    "UW1",
+    "N",
+    "IH0",
+    "NG"
+  ],
+  "MOGA-B": [
+    "M",
+    "OW1",
+    "G",
+    "AH0",
+    "B",
+    "IY1"
+  ],
+  "PART-BASED": [
+    "P",
+    "AA1",
+    "R",
+    "T",
+    "B",
+    "EY1",
+    "S",
+    "T"
+  ],
+  "AUD": [
+    "EY1",
+    "Y",
+    "UW1",
+    "D",
+    "IY1"
+  ],
+  "RES": [
+    "R",
+    "EH1",
+    "Z"
+  ],
+  "TORCHBEAST": [
+    "T",
+    "AO1",
+    "R",
+    "CH",
+    "B",
+    "IY1",
+    "S",
+    "T"
+  ],
+  "GRAPHCL": [
+    "G",
+    "R",
+    "AE1",
+    "F",
+    "S",
+    "IY1",
+    "EH1",
+    "L"
+  ],
+  "INFOGRAPH": [
+    "IH1",
+    "N",
+    "F",
+    "OW0",
+    "G",
+    "R",
+    "AE1",
+    "F"
+  ],
+  "WINTSR": [
+    "W",
+    "IH1",
+    "N",
+    "T",
+    "IY1",
+    "EH1",
+    "S",
+    "AA1",
+    "R"
+  ],
+  "MIXTEXT": [
+    "M",
+    "IH1",
+    "K",
+    "S",
+    "T",
+    "EH1",
+    "K",
+    "S",
+    "T"
+  ],
+  "PROCAN": [
+    "P",
+    "R",
+    "OW1",
+    "K",
+    "AE1",
+    "N"
+  ],
+  "TRANSFERQA": [
+    "T",
+    "R",
+    "AE0",
+    "N",
+    "S",
+    "F",
+    "ER1",
+    "K",
+    "Y",
+    "UW1",
+    "EY1"
+  ],
+  "SYNANN": [
+    "S",
+    "IH1",
+    "N",
+    "AH0",
+    "EH1",
+    "N",
+    "EH1",
+    "N"
+  ],
+  "LEGENDRE": [
+    "L",
+    "AH0",
+    "ZH",
+    "AA1",
+    "N",
+    "D",
+    "ER0"
+  ],
+  "EARLY-LEARNING": [
+    "ER1",
+    "L",
+    "IY0",
+    "L",
+    "ER1",
+    "N",
+    "IH0",
+    "NG"
+  ],
+  "AJAY": [
+    "AH0",
+    "JH",
+    "EY1"
+  ],
+  "LAYERDROP": [
+    "L",
+    "EY1",
+    "ER0",
+    "D",
+    "R",
+    "AA1",
+    "P"
+  ],
+  "DROPBLOCK": [
+    "D",
+    "R",
+    "AA1",
+    "P",
+    "B",
+    "L",
+    "AA1",
+    "K"
+  ],
+  "CAPSNET": [
+    "K",
+    "AE1",
+    "P",
+    "S",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "RANDOMROTATE": [
+    "R",
+    "AE1",
+    "N",
+    "D",
+    "AH0",
+    "M",
+    "R",
+    "OW1",
+    "T",
+    "EY2",
+    "T"
+  ],
+  "ROI": [
+    "AA1",
+    "R",
+    "OW1",
+    "AY1"
+  ],
+  "REVNET": [
+    "R",
+    "EH1",
+    "V",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "MAGFACE": [
+    "M",
+    "AE1",
+    "G",
+    "F",
+    "EY1",
+    "S"
+  ],
+  "NON-REDUNDANT": [
+    "N",
+    "AA2",
+    "N",
+    "R",
+    "IH0",
+    "D",
+    "AH1",
+    "N",
+    "D",
+    "AH0",
+    "N",
+    "T"
+  ],
+  "FUSEFORMER": [
+    "F",
+    "Y",
+    "UW1",
+    "Z",
+    "F",
+    "AO1",
+    "R",
+    "M",
+    "ER0"
+  ],
+  "BI-LATERAL": [
+    "B",
+    "AY0",
+    "L",
+    "AE1",
+    "T",
+    "ER0",
+    "AH0",
+    "L"
+  ],
+  "SEGNET": [
+    "S",
+    "EH1",
+    "G",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "WAVEGAN": [
+    "W",
+    "EY1",
+    "V",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "CONTROLVAE": [
+    "K",
+    "AH0",
+    "N",
+    "T",
+    "R",
+    "OW1",
+    "L",
+    "V",
+    "IY1",
+    "EY1",
+    "IY1"
+  ],
+  "DEEPCUBEA": [
+    "D",
+    "IY1",
+    "P",
+    "K",
+    "Y",
+    "UW1",
+    "B",
+    "EY1"
+  ],
+  "ZOOMNET": [
+    "Z",
+    "UW1",
+    "M",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "MIXCONV": [
+    "M",
+    "IH1",
+    "K",
+    "S",
+    "K",
+    "AA1",
+    "N",
+    "V"
+  ],
+  "MULTIKE": [
+    "M",
+    "AH1",
+    "L",
+    "T",
+    "IY0",
+    "K",
+    "EY1",
+    "IY1"
+  ],
+  "TINAFACE": [
+    "T",
+    "IY1",
+    "N",
+    "AH0",
+    "F",
+    "EY1",
+    "S"
+  ],
+  "PIPEMARE": [
+    "P",
+    "AY1",
+    "P",
+    "M",
+    "EH1",
+    "R"
+  ],
+  "DIFFPOOL": [
+    "D",
+    "IH1",
+    "F",
+    "P",
+    "UW1",
+    "L"
+  ],
+  "TRANSE": [
+    "T",
+    "R",
+    "AE1",
+    "N",
+    "Z",
+    "IY1"
+  ],
+  "MULTIGRAIN": [
+    "M",
+    "AH2",
+    "L",
+    "T",
+    "IY0",
+    "G",
+    "R",
+    "EY1",
+    "N"
+  ],
+  "GRIDMASK": [
+    "G",
+    "R",
+    "IH1",
+    "D",
+    "M",
+    "AE1",
+    "S",
+    "K"
+  ],
+  "MACBERT": [
+    "M",
+    "AE1",
+    "K",
+    "B",
+    "ER1",
+    "T"
+  ],
+  "AE": [
+    "EY1",
+    "IY1"
+  ],
+  "VOCGAN": [
+    "V",
+    "AA1",
+    "K",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "COORDCONV": [
+    "K",
+    "OW1",
+    "AO0",
+    "R",
+    "D",
+    "K",
+    "AA1",
+    "N",
+    "V"
+  ],
+  "SCAN-CLUSTERING": [
+    "S",
+    "K",
+    "AE1",
+    "N",
+    "K",
+    "L",
+    "AH1",
+    "S",
+    "T",
+    "ER0",
+    "IH0",
+    "NG"
+  ],
+  "HARM-NET": [
+    "HH",
+    "AA1",
+    "R",
+    "M",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "EIGENMAP": [
+    "AY1",
+    "G",
+    "AH0",
+    "N",
+    "M",
+    "AE1",
+    "P"
+  ],
+  "MELGAN": [
+    "M",
+    "EH1",
+    "L",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "MODNET": [
+    "M",
+    "AA1",
+    "D",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "UFLOSS": [
+    "Y",
+    "UW1",
+    "EH1",
+    "F",
+    "L",
+    "AO1",
+    "S"
+  ],
+  "EST": [
+    "EH1",
+    "S",
+    "T"
+  ],
+  "CONVNETS": [
+    "K",
+    "AA1",
+    "N",
+    "V",
+    "N",
+    "EH1",
+    "T",
+    "S"
+  ],
+  "SAGAN": [
+    "S",
+    "EY1",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "SHAPECONV": [
+    "SH",
+    "EY1",
+    "P",
+    "K",
+    "AA1",
+    "N",
+    "V"
+  ],
+  "CONVBERT": [
+    "K",
+    "AA1",
+    "N",
+    "V",
+    "B",
+    "ER1",
+    "T"
+  ],
+  "HYPERSA": [
+    "HH",
+    "AY1",
+    "P",
+    "ER0",
+    "EH1",
+    "S",
+    "EY1"
+  ],
+  "SELF-MEM": [
+    "S",
+    "EH1",
+    "L",
+    "F",
+    "M",
+    "EH1",
+    "M"
+  ],
+  "SUPPORT-SET": [
+    "S",
+    "AH0",
+    "P",
+    "AO1",
+    "R",
+    "T",
+    "S",
+    "EH1",
+    "T"
+  ],
+  "PRE-TRAINED": [
+    "P",
+    "R",
+    "IY1",
+    "T",
+    "R",
+    "EY1",
+    "N",
+    "D"
+  ],
+  "SORTCUT": [
+    "S",
+    "AO1",
+    "R",
+    "T",
+    "K",
+    "AH1",
+    "T"
+  ],
+  "POLYNORM": [
+    "P",
+    "AA1",
+    "L",
+    "IY0",
+    "N",
+    "AO1",
+    "R",
+    "M"
+  ],
+  "INPLACE-ABN": [
+    "IH0",
+    "N",
+    "P",
+    "L",
+    "EY1",
+    "S",
+    "EY1",
+    "B",
+    "IY1",
+    "EH1",
+    "N"
+  ],
+  "TIME-CAUSAL": [
+    "T",
+    "AY1",
+    "M",
+    "K",
+    "AO1",
+    "Z",
+    "AH0",
+    "L"
+  ],
+  "REVSILO": [
+    "R",
+    "EH1",
+    "V",
+    "S",
+    "AY1",
+    "L",
+    "OW0"
+  ],
+  "MONET": [
+    "M",
+    "OW1",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "BIGAN": [
+    "B",
+    "AY1",
+    "G",
+    "AE1",
+    "N"
+  ],
+  "POLYCONV": [
+    "P",
+    "AA1",
+    "L",
+    "IY0",
+    "K",
+    "AA1",
+    "N",
+    "V"
+  ],
+  "COOP": [
+    "K",
+    "OW1",
+    "AA2",
+    "P"
+  ],
+  "RAE": [
+    "AA1",
+    "R",
+    "EY1",
+    "IY1"
+  ],
+  "MULTI-LAYER": [
+    "M",
+    "AH1",
+    "L",
+    "T",
+    "IY0",
+    "L",
+    "EY1",
+    "ER0"
+  ],
+  "PAFNET": [
+    "P",
+    "AE1",
+    "F",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "DELTACONV": [
+    "D",
+    "EH1",
+    "L",
+    "T",
+    "AH0",
+    "K",
+    "AA1",
+    "N",
+    "V"
+  ],
+  "GREEDYNAS": [
+    "G",
+    "R",
+    "IY1",
+    "D",
+    "IY0",
+    "EH1",
+    "N",
+    "EY1",
+    "EH1",
+    "S"
+  ],
+  "LITESEG": [
+    "L",
+    "AY1",
+    "T",
+    "S",
+    "EH1",
+    "G"
+  ],
+  "ALS": [
+    "EY1",
+    "EH1",
+    "L",
+    "EH1",
+    "S"
+  ],
+  "POLYCAM": [
+    "P",
+    "AA1",
+    "L",
+    "IY0",
+    "K",
+    "AE1",
+    "M"
+  ],
+  "AMSGRAD": [
+    "AE1",
+    "M",
+    "Z",
+    "G",
+    "R",
+    "AE1",
+    "D"
+  ],
+  "BASNET": [
+    "B",
+    "AE1",
+    "S",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "TEXTGRAD": [
+    "T",
+    "EH1",
+    "K",
+    "S",
+    "T",
+    "G",
+    "R",
+    "AE1",
+    "D"
+  ],
+  "GA": [
+    "JH",
+    "IY1",
+    "EY1"
+  ],
+  "GROUP-AWARE": [
+    "G",
+    "R",
+    "UW1",
+    "P",
+    "AH0",
+    "W",
+    "EH1",
+    "R"
+  ],
+  "SYMMNET": [
+    "S",
+    "IH1",
+    "M",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "MAS": [
+    "EH1",
+    "M",
+    "EY1",
+    "EH1",
+    "S"
+  ],
+  "CAYLEYNET": [
+    "K",
+    "EY1",
+    "L",
+    "IY0",
+    "N",
+    "EH1",
+    "T"
+  ],
+  "ALPHAZERO": [
+    "AE1",
+    "L",
+    "F",
+    "AH0",
+    "Z",
+    "IH1",
+    "R",
+    "OW0"
+  ],
+  "ANN": [
+    "EY1",
+    "EH1",
+    "N",
+    "EH1",
+    "N"
+  ],
+  "ANTI-SPOOFING": [
+    "AE2",
+    "N",
+    "T",
+    "IY0",
+    "S",
+    "P",
+    "UW1",
+    "F",
+    "IH0",
+    "NG"
+  ],
+  "FRANCO-ARABIC": [
+    "F",
+    "R",
+    "AE1",
+    "NG",
+    "K",
+    "OW0",
+    "AE1",
+    "R",
+    "AH0",
+    "B",
+    "IH0",
+    "K"
+  ],
+  "RAI": [
+    "AA1",
+    "R",
+    "EY1",
+    "AY1"
+  ],
+  "MC": [
+    "EH1",
+    "M",
+    "S",
+    "IY1"
+  ],
+  "DREAMBOOTH": [
+    "D",
+    "R",
+    "IY1",
+    "M",
+    "B",
+    "UW1",
+    "TH"
   ],
   "AMD": [
     "EY1",
@@ -117612,17 +121800,6 @@
     "EH2",
     "M"
   ],
-  "SPACEMOBILE": [
-    "S",
-    "P",
-    "EY1",
-    "S",
-    "M",
-    "AH0",
-    "B",
-    "AH0",
-    "L"
-  ],
   "COHERE": [
     "K",
     "OW0",
@@ -117700,17 +121877,6 @@
     "W",
     "EH1",
     "N"
-  ],
-  "SENSENOVA": [
-    "S",
-    "EH2",
-    "N",
-    "S",
-    "AH0",
-    "N",
-    "OW1",
-    "V",
-    "AH0"
   ],
   "LONGCAT": [
     "L",
@@ -117889,15 +122055,6 @@
     "AH0",
     "N"
   ],
-  "LITEMAT": [
-    "L",
-    "AY1",
-    "T",
-    "AH0",
-    "M",
-    "AE0",
-    "T"
-  ],
   "SENNHEISER": [
     "S",
     "EH1",
@@ -117978,13 +122135,6 @@
     "IY0",
     "OW0"
   ],
-  "O-MINI": [
-    "OW0",
-    "M",
-    "IY1",
-    "N",
-    "IY0"
-  ],
   "SORA": [
     "S",
     "AO1",
@@ -118051,16 +122201,6 @@
     "L",
     "OW2"
   ],
-  "SENSEVOICE": [
-    "S",
-    "EH1",
-    "N",
-    "S",
-    "AH0",
-    "V",
-    "OY2",
-    "S"
-  ],
   "GAUSSIAN": [
     "G",
     "AW1",
@@ -118099,19 +122239,6 @@
     "HH",
     "EH2",
     "D"
-  ],
-  "FLASHATTENTION": [
-    "F",
-    "L",
-    "AE2",
-    "SH",
-    "AH0",
-    "T",
-    "AE1",
-    "N",
-    "SH",
-    "AH0",
-    "N"
   ],
   "MEGATRON": [
     "M",
@@ -118168,14 +122295,6 @@
     "R",
     "M"
   ],
-  "SWIGLU": [
-    "S",
-    "W",
-    "IH1",
-    "G",
-    "AH0",
-    "L"
-  ],
   "SILU": [
     "S",
     "IH1",
@@ -118228,46 +122347,6 @@
     "AY2",
     "N"
   ],
-  "STYLEGAN": [
-    "S",
-    "T",
-    "AY1",
-    "L",
-    "G",
-    "AH0",
-    "N"
-  ],
-  "HUMANEVAL": [
-    "HH",
-    "Y",
-    "UW2",
-    "M",
-    "AH0",
-    "N",
-    "EH1",
-    "V",
-    "AH0",
-    "L"
-  ],
-  "SUPERGLUE": [
-    "S",
-    "UW1",
-    "P",
-    "ER0",
-    "G",
-    "AH2",
-    "L"
-  ],
-  "HELLASWAG": [
-    "HH",
-    "EH1",
-    "L",
-    "AH0",
-    "S",
-    "W",
-    "AA2",
-    "G"
-  ],
   "JAILBREAK": [
     "JH",
     "EY1",
@@ -118286,16 +122365,6 @@
     "P",
     "AO2",
     "R"
-  ],
-  "OPENVINO": [
-    "OW0",
-    "P",
-    "EH0",
-    "N",
-    "V",
-    "IY1",
-    "N",
-    "OW0"
   ],
   "TENSORBOARD": [
     "T",
@@ -118316,15 +122385,6 @@
     "AY2",
     "S"
   ],
-  "MUONCLIP": [
-    "M",
-    "AW1",
-    "N",
-    "K",
-    "L",
-    "AE2",
-    "P"
-  ],
   "REAL-TIME": [
     "R",
     "IY1",
@@ -118332,14 +122392,6 @@
     "T",
     "AY2",
     "M"
-  ],
-  "SELF-PLAY": [
-    "S",
-    "EH1",
-    "L",
-    "F",
-    "L",
-    "EY1"
   ],
   "DATASET": [
     "D",
@@ -118360,18 +122412,6 @@
     "R",
     "D"
   ],
-  "INTERPOLATION": [
-    "IH2",
-    "T",
-    "ER1",
-    "P",
-    "AH0",
-    "L",
-    "EY2",
-    "SH",
-    "AH0",
-    "N"
-  ],
   "OSWORLD": [
     "AO1",
     "S",
@@ -118379,15 +122419,6 @@
     "ER0",
     "L",
     "D"
-  ],
-  "WEBARENA": [
-    "W",
-    "EH2",
-    "B",
-    "ER0",
-    "AA1",
-    "N",
-    "AH0"
   ],
   "WILDBENCH": [
     "W",
@@ -118398,61 +122429,6 @@
     "EH2",
     "N",
     "CH"
-  ],
-  "CRUXEVAL": [
-    "K",
-    "R",
-    "AH1",
-    "K",
-    "S",
-    "IH0",
-    "V",
-    "AH0",
-    "L"
-  ],
-  "SCICODE": [
-    "S",
-    "IH0",
-    "K",
-    "OW1",
-    "D"
-  ],
-  "FRONTIERMATH": [
-    "F",
-    "R",
-    "AH1",
-    "N",
-    "T",
-    "IY0",
-    "R",
-    "M",
-    "AW2",
-    "TH"
-  ],
-  "DEEPSWE": [
-    "D",
-    "IY1",
-    "P",
-    "S",
-    "W",
-    "EH2"
-  ],
-  "SWE-SMITH": [
-    "S",
-    "W",
-    "IY1",
-    "Z",
-    "M",
-    "IH0",
-    "TH"
-  ],
-  "ATCODER": [
-    "AH0",
-    "T",
-    "K",
-    "OW1",
-    "D",
-    "ER0"
   ],
   "MOS": [
     "M",
@@ -118489,14 +122465,6 @@
     "EY2",
     "N"
   ],
-  "MMACTION": [
-    "M",
-    "AE1",
-    "K",
-    "SH",
-    "AH0",
-    "N"
-  ],
   "WHYLABS": [
     "W",
     "AY1",
@@ -118524,38 +122492,6 @@
     "T",
     "ER0"
   ],
-  "PROMPTLAYER": [
-    "P",
-    "R",
-    "AA1",
-    "M",
-    "P",
-    "T",
-    "AH0",
-    "L",
-    "EY2",
-    "ER0"
-  ],
-  "CLUSTERIP": [
-    "K",
-    "L",
-    "AH1",
-    "S",
-    "T",
-    "ER0",
-    "IH0",
-    "P"
-  ],
-  "NODEPORT": [
-    "N",
-    "OW1",
-    "D",
-    "AH0",
-    "P",
-    "AO2",
-    "R",
-    "T"
-  ],
   "CONFIGMAP": [
     "K",
     "AA1",
@@ -118575,15 +122511,6 @@
     "S",
     "IY1"
   ],
-  "CRONJOB": [
-    "K",
-    "R",
-    "AA1",
-    "N",
-    "JH",
-    "OW2",
-    "B"
-  ],
   "CSI": [
     "S",
     "IY1",
@@ -118599,14 +122526,6 @@
     "L",
     "OW2",
     "Z"
-  ],
-  "DEVOPS": [
-    "D",
-    "IH0",
-    "V",
-    "AO1",
-    "P",
-    "S"
   ],
   "TERRAFORM": [
     "T",
@@ -118626,16 +122545,6 @@
     "B",
     "AH0",
     "L"
-  ],
-  "SALTSTACK": [
-    "S",
-    "AO1",
-    "L",
-    "T",
-    "S",
-    "K",
-    "AE2",
-    "K"
   ],
   "SQL": [
     "EH2",
@@ -118674,15 +122583,6 @@
     "AA1",
     "N",
     "AH0"
-  ],
-  "WEBSOCKET": [
-    "W",
-    "EH1",
-    "B",
-    "S",
-    "K",
-    "AH0",
-    "T"
   ],
   "XML": [
     "EH2",
@@ -118781,14 +122681,6 @@
     "OW0",
     "S"
   ],
-  "POWERSHELL": [
-    "P",
-    "AW1",
-    "ER0",
-    "SH",
-    "AH0",
-    "L"
-  ],
   "JAVASCRIPT": [
     "JH",
     "AA1",
@@ -118823,60 +122715,10 @@
     "V",
     "IY1"
   ],
-  "WEBASSEMBLY": [
-    "W",
-    "EH1",
-    "B",
-    "AH0",
-    "S",
-    "M",
-    "AH0",
-    "B",
-    "L",
-    "IY0"
-  ],
-  "SERVER-SENT": [
-    "S",
-    "ER1",
-    "V",
-    "ER0",
-    "S",
-    "AH0",
-    "N",
-    "T"
-  ],
   "SAAS": [
     "S",
     "AA1",
     "S"
-  ],
-  "BABYAGI": [
-    "B",
-    "AA2",
-    "B",
-    "IY0",
-    "AA1",
-    "JH",
-    "IH0"
-  ],
-  "OPENSTACK": [
-    "AA1",
-    "P",
-    "AH0",
-    "N",
-    "S",
-    "T",
-    "AE2",
-    "K"
-  ],
-  "OPENFLOW": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "F",
-    "OW2",
-    "L"
   ],
   "WI-FI": [
     "W",
@@ -118892,13 +122734,6 @@
     "UW2",
     "TH"
   ],
-  "OPC-UA": [
-    "AA1",
-    "P",
-    "CH",
-    "UW0",
-    "AH0"
-  ],
   "GAZEBO": [
     "G",
     "AH0",
@@ -118906,36 +122741,6 @@
     "IY1",
     "B",
     "OW0"
-  ],
-  "MUJOCO": [
-    "M",
-    "Y",
-    "UW1",
-    "JH",
-    "OW0",
-    "K",
-    "OW0"
-  ],
-  "MOVEIT": [
-    "M",
-    "UW1",
-    "V",
-    "IY2",
-    "T"
-  ],
-  "MULTI-INSTANCE": [
-    "M",
-    "AH2",
-    "L",
-    "T",
-    "IY0",
-    "AE1",
-    "N",
-    "S",
-    "T",
-    "AH0",
-    "N",
-    "S"
   ],
   "IN-TOTO": [
     "IH0",
@@ -118968,18 +122773,6 @@
     "M",
     "AH0"
   ],
-  "SELF-CRITIQUE": [
-    "S",
-    "EH2",
-    "L",
-    "F",
-    "K",
-    "R",
-    "IY1",
-    "T",
-    "IH0",
-    "K"
-  ],
   "CDC": [
     "S",
     "IY2",
@@ -118987,15 +122780,6 @@
     "IY2",
     "S",
     "IY1"
-  ],
-  "MULTI-AZ": [
-    "M",
-    "AH1",
-    "L",
-    "T",
-    "IY0",
-    "AH0",
-    "Z"
   ],
   "MULTI-REGION": [
     "M",
@@ -119033,24 +122817,6 @@
     "IH0",
     "N",
     "T"
-  ],
-  "TESTNG": [
-    "T",
-    "EH1",
-    "S",
-    "T",
-    "IH0",
-    "NG"
-  ],
-  "NATGATEWAY": [
-    "N",
-    "AE1",
-    "T",
-    "G",
-    "AH0",
-    "T",
-    "W",
-    "EY2"
   ],
   "APPSYNC": [
     "AE1",
@@ -119090,15 +122856,6 @@
     "N",
     "Z"
   ],
-  "CLOUDSHELL": [
-    "K",
-    "L",
-    "AW1",
-    "D",
-    "SH",
-    "AH0",
-    "L"
-  ],
   "DATASYNC": [
     "D",
     "EY1",
@@ -119108,18 +122865,6 @@
     "IH0",
     "N",
     "K"
-  ],
-  "MIGRATIONHUB": [
-    "M",
-    "AY2",
-    "G",
-    "R",
-    "EY1",
-    "SH",
-    "AH0",
-    "N",
-    "AH0",
-    "B"
   ],
   "WORKSPACES": [
     "W",
@@ -119190,43 +122935,6 @@
     "AE2",
     "P"
   ],
-  "SPOTINSTANCE": [
-    "S",
-    "P",
-    "AA1",
-    "T",
-    "AH0",
-    "N",
-    "S",
-    "T",
-    "AH0",
-    "N",
-    "S"
-  ],
-  "PLACEMENTGROUP": [
-    "P",
-    "L",
-    "EY1",
-    "S",
-    "M",
-    "AH0",
-    "N",
-    "T",
-    "R",
-    "UW2",
-    "P"
-  ],
-  "ENAEXPRESS": [
-    "EH1",
-    "N",
-    "AH0",
-    "K",
-    "S",
-    "P",
-    "R",
-    "EH2",
-    "S"
-  ],
   "APPFLOW": [
     "AE1",
     "P",
@@ -119256,40 +122964,6 @@
     "P",
     "S"
   ],
-  "SERVICEBUS": [
-    "S",
-    "ER1",
-    "V",
-    "AH0",
-    "S",
-    "AH0",
-    "B",
-    "AH0",
-    "S"
-  ],
-  "SYNAPSE": [
-    "S",
-    "IH1",
-    "AE0",
-    "P",
-    "S"
-  ],
-  "STREAMANALYTICS": [
-    "S",
-    "T",
-    "R",
-    "IY2",
-    "M",
-    "AE2",
-    "N",
-    "AH0",
-    "T",
-    "EH1",
-    "L",
-    "IH0",
-    "K",
-    "S"
-  ],
   "KEYVAULT": [
     "K",
     "IY1",
@@ -119308,32 +122982,12 @@
     "AO2",
     "R"
   ],
-  "AIFOUNDRY": [
-    "AY1",
-    "F",
-    "AW0",
-    "N",
-    "D",
-    "R",
-    "IY0"
-  ],
   "POWERAPPS": [
     "P",
     "AW1",
     "ER0",
     "AE2",
     "P",
-    "S"
-  ],
-  "ULTRADISK": [
-    "AH1",
-    "L",
-    "T",
-    "R",
-    "AH0",
-    "D",
-    "IH0",
-    "K",
     "S"
   ],
   "WORKBOOKS": [
@@ -119344,14 +122998,6 @@
     "UH2",
     "K",
     "S"
-  ],
-  "PLAYFAB": [
-    "P",
-    "L",
-    "EY1",
-    "F",
-    "AH0",
-    "B"
   ],
   "CLOUDRUN": [
     "K",
@@ -119369,15 +123015,6 @@
     "S",
     "AH0",
     "B"
-  ],
-  "CLOUDNAT": [
-    "K",
-    "L",
-    "AW1",
-    "D",
-    "N",
-    "AH0",
-    "T"
   ],
   "CLOUDTRACE": [
     "K",
@@ -119435,22 +123072,6 @@
     "S",
     "K"
   ],
-  "TRANSFERAPPLIANCE": [
-    "T",
-    "R",
-    "AE0",
-    "N",
-    "S",
-    "F",
-    "ER1",
-    "AH0",
-    "P",
-    "L",
-    "IY0",
-    "AH0",
-    "N",
-    "S"
-  ],
   "WORKSPACE": [
     "W",
     "ER1",
@@ -119459,23 +123080,6 @@
     "P",
     "EY2",
     "S"
-  ],
-  "CUBEFS": [
-    "K",
-    "Y",
-    "UW1",
-    "B",
-    "EH0",
-    "F",
-    "S"
-  ],
-  "WEAVENET": [
-    "W",
-    "IY1",
-    "V",
-    "AH0",
-    "N",
-    "T"
   ],
   "OPENSHIFT": [
     "OW1",
@@ -119486,35 +123090,6 @@
     "IH2",
     "F",
     "T"
-  ],
-  "BUILDKIT": [
-    "B",
-    "IH1",
-    "L",
-    "D",
-    "IH2",
-    "K",
-    "T"
-  ],
-  "OPENEBS": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "AH0",
-    "B",
-    "Z"
-  ],
-  "FLASH-NEXT": [
-    "F",
-    "L",
-    "AE1",
-    "SH",
-    "N",
-    "EH2",
-    "K",
-    "T",
-    "S"
   ],
   "KIMI-AUDIO": [
     "K",
@@ -119536,52 +123111,6 @@
     "IY0",
     "OW0"
   ],
-  "OPENTHOUGHTS": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "TH",
-    "AW2",
-    "T",
-    "S"
-  ],
-  "YI-CODER": [
-    "Y",
-    "AH0",
-    "K",
-    "OW1",
-    "D",
-    "ER0"
-  ],
-  "VIDEOCHAT": [
-    "V",
-    "IH1",
-    "D",
-    "IY0",
-    "OW0",
-    "HH",
-    "AE2",
-    "T"
-  ],
-  "VIDEOPOET": [
-    "V",
-    "IH1",
-    "D",
-    "IY0",
-    "OW0",
-    "P",
-    "OW2",
-    "T"
-  ],
-  "HIDREAM": [
-    "HH",
-    "IH1",
-    "D",
-    "R",
-    "IY0",
-    "M"
-  ],
   "SOVITS": [
     "S",
     "OW1",
@@ -119589,24 +123118,6 @@
     "IH0",
     "T",
     "S"
-  ],
-  "SPEECHT": [
-    "S",
-    "P",
-    "IY1",
-    "CH",
-    "T"
-  ],
-  "ABBABILITY": [
-    "AE2",
-    "B",
-    "AH0",
-    "B",
-    "IH1",
-    "L",
-    "AH0",
-    "T",
-    "IY0"
   ],
   "ONROBOT": [
     "AA1",
@@ -119623,15 +123134,6 @@
     "M",
     "IY0"
   ],
-  "MYCOBOT": [
-    "M",
-    "AY1",
-    "K",
-    "OW0",
-    "B",
-    "AE2",
-    "T"
-  ],
   "AGILEX": [
     "AE1",
     "JH",
@@ -119639,21 +123141,6 @@
     "L",
     "EH2",
     "K",
-    "S"
-  ],
-  "LIMX": [
-    "L",
-    "IH1",
-    "M",
-    "K",
-    "S"
-  ],
-  "MATRICE": [
-    "M",
-    "EY1",
-    "T",
-    "R",
-    "IH0",
     "S"
   ],
   "IQ": [
@@ -119673,14 +123160,6 @@
     "AY2",
     "M"
   ],
-  "REDNET": [
-    "R",
-    "EH1",
-    "D",
-    "N",
-    "IH0",
-    "T"
-  ],
   "PROTOOLS": [
     "P",
     "R",
@@ -119699,20 +123178,6 @@
     "CH",
     "IY2"
   ],
-  "MEDIACOMPOSER": [
-    "M",
-    "IY2",
-    "D",
-    "IY0",
-    "AE1",
-    "K",
-    "AH0",
-    "M",
-    "P",
-    "OW2",
-    "S",
-    "ER0"
-  ],
   "FINALCUT": [
     "F",
     "AY1",
@@ -119722,15 +123187,6 @@
     "K",
     "AH2",
     "T"
-  ],
-  "ZOOMROOMS": [
-    "Z",
-    "UW1",
-    "M",
-    "R",
-    "AA2",
-    "M",
-    "Z"
   ],
   "FLATBUFFERS": [
     "F",
@@ -119786,41 +123242,6 @@
     "L",
     "OW0"
   ],
-  "NIXOS": [
-    "N",
-    "IH1",
-    "K",
-    "S",
-    "AH0",
-    "S"
-  ],
-  "APPIMAGE": [
-    "AE1",
-    "P",
-    "IH0",
-    "M",
-    "IH0",
-    "JH"
-  ],
-  "LIMITRANGE": [
-    "L",
-    "IH1",
-    "M",
-    "AH0",
-    "T",
-    "R",
-    "EY2",
-    "N",
-    "D"
-  ],
-  "EVENUP": [
-    "IH0",
-    "V",
-    "EH1",
-    "N",
-    "AH0",
-    "P"
-  ],
   "BLUEPRISM": [
     "B",
     "L",
@@ -119831,21 +123252,6 @@
     "Z",
     "AH0",
     "M"
-  ],
-  "ARCGIS": [
-    "AA1",
-    "R",
-    "JH",
-    "IH0",
-    "S"
-  ],
-  "FACTSET": [
-    "F",
-    "AE1",
-    "K",
-    "T",
-    "S",
-    "T"
   ],
   "IEEE": [
     "AY2",
@@ -119865,26 +123271,6 @@
     "T",
     "AY2",
     "M"
-  ],
-  "REST-EM": [
-    "R",
-    "EH1",
-    "S",
-    "T",
-    "AH0",
-    "M"
-  ],
-  "PROGRAM-OF-THOUGHT": [
-    "P",
-    "R",
-    "OW1",
-    "G",
-    "R",
-    "AE0",
-    "M",
-    "TH",
-    "AA1",
-    "T"
   ],
   "QWEN-MATH": [
     "K",
@@ -119913,28 +123299,12 @@
     "AE2",
     "TH"
   ],
-  "K-FAC": [
-    "K",
-    "EY1",
-    "F",
-    "K",
-    "AE2",
-    "K"
-  ],
   "NADAM": [
     "N",
     "AE1",
     "D",
     "AH0",
     "M"
-  ],
-  "WISE-FT": [
-    "W",
-    "AY1",
-    "Z",
-    "F",
-    "EH2",
-    "T"
   ],
   "MULTI-LORA": [
     "M",
@@ -119955,21 +123325,6 @@
     "K",
     "S"
   ],
-  "S-LORA": [
-    "S",
-    "L",
-    "AO1",
-    "R",
-    "AH0"
-  ],
-  "AWQ-LORA": [
-    "AA0",
-    "K",
-    "L",
-    "AO1",
-    "R",
-    "AH0"
-  ],
   "BITFIT": [
     "B",
     "IH1",
@@ -119977,22 +123332,6 @@
     "F",
     "IH0",
     "T"
-  ],
-  "PACKNET": [
-    "P",
-    "AE1",
-    "K",
-    "N",
-    "AH0",
-    "T"
-  ],
-  "OPEN-X": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "K",
-    "S"
   ],
   "DROID": [
     "D",
@@ -120061,28 +123400,6 @@
     "K",
     "S"
   ],
-  "FORTISWITCH": [
-    "F",
-    "AO1",
-    "R",
-    "T",
-    "IH0",
-    "S",
-    "T",
-    "W",
-    "IH0",
-    "CH"
-  ],
-  "FORTISASE": [
-    "F",
-    "AO1",
-    "R",
-    "T",
-    "AH0",
-    "S",
-    "EY2",
-    "S"
-  ],
   "URL": [
     "Y",
     "UW2",
@@ -120100,15 +123417,6 @@
     "K",
     "S"
   ],
-  "NETSCALER": [
-    "N",
-    "EH1",
-    "T",
-    "S",
-    "K",
-    "L",
-    "ER0"
-  ],
   "BLUECAT": [
     "B",
     "L",
@@ -120124,16 +123432,6 @@
     "IH0",
     "F",
     "AY2"
-  ],
-  "SONICWALL": [
-    "S",
-    "AA1",
-    "N",
-    "IH0",
-    "K",
-    "W",
-    "AH0",
-    "L"
   ],
   "WATCHGUARD": [
     "W",
@@ -120199,16 +123497,6 @@
     "EH1",
     "T"
   ],
-  "SHUFFLENET": [
-    "SH",
-    "AH1",
-    "F",
-    "AH0",
-    "L",
-    "N",
-    "IY2",
-    "T"
-  ],
   "GHOSTNET": [
     "G",
     "OW1",
@@ -120216,50 +123504,6 @@
     "T",
     "N",
     "EH2",
-    "T"
-  ],
-  "NASNET": [
-    "N",
-    "AE1",
-    "S",
-    "N",
-    "IH0",
-    "T"
-  ],
-  "RETINANET": [
-    "R",
-    "EH1",
-    "T",
-    "AH0",
-    "N",
-    "AH0",
-    "N",
-    "T"
-  ],
-  "MASKRCNN": [
-    "M",
-    "AE1",
-    "S",
-    "K",
-    "R",
-    "AH0",
-    "N"
-  ],
-  "PP-YOLO": [
-    "P",
-    "IY0",
-    "OW1",
-    "L",
-    "OW0"
-  ],
-  "CENTERNET": [
-    "S",
-    "EH1",
-    "N",
-    "T",
-    "ER0",
-    "N",
-    "IY2",
     "T"
   ],
   "FASTSAM": [
@@ -120311,16 +123555,6 @@
     "D",
     "ER0"
   ],
-  "OPENORCA": [
-    "AH0",
-    "P",
-    "AH0",
-    "N",
-    "AA1",
-    "R",
-    "K",
-    "AH0"
-  ],
   "ULTRACHAT": [
     "AH1",
     "L",
@@ -120328,15 +123562,6 @@
     "R",
     "AH0",
     "CH",
-    "AE2",
-    "T"
-  ],
-  "WILDCHAT": [
-    "W",
-    "AY1",
-    "L",
-    "D",
-    "K",
     "AE2",
     "T"
   ],
@@ -120352,55 +123577,6 @@
     "AY1",
     "D",
     "IY0"
-  ],
-  "TESLAP": [
-    "T",
-    "EH1",
-    "S",
-    "L",
-    "AH0",
-    "P"
-  ],
-  "TESLAV": [
-    "T",
-    "EH1",
-    "S",
-    "L",
-    "AH0",
-    "V"
-  ],
-  "TESLAT": [
-    "T",
-    "EH1",
-    "S",
-    "L",
-    "AH0",
-    "T"
-  ],
-  "TESLAM": [
-    "T",
-    "EH1",
-    "S",
-    "L",
-    "AH0",
-    "M"
-  ],
-  "ARCA": [
-    "AA1",
-    "R",
-    "K",
-    "AH0"
-  ],
-  "CLOUDBLAZER": [
-    "K",
-    "L",
-    "AW1",
-    "D",
-    "B",
-    "AH0",
-    "L",
-    "Z",
-    "ER0"
   ],
   "NEURIPS": [
     "N",
@@ -120418,46 +123594,6 @@
     "IH0",
     "S"
   ],
-  "OPENREVIEW": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "R",
-    "IY0",
-    "V",
-    "Y",
-    "UW2",
-    "R"
-  ],
-  "SCIKIT-LEARN": [
-    "S",
-    "IH1",
-    "K",
-    "IH0",
-    "T",
-    "L",
-    "ER0",
-    "N"
-  ],
-  "INVOKEAI": [
-    "IH0",
-    "N",
-    "V",
-    "OW1",
-    "K",
-    "IY0"
-  ],
-  "IP-ADAPTER": [
-    "IH1",
-    "P",
-    "AH0",
-    "D",
-    "AE2",
-    "P",
-    "T",
-    "ER0"
-  ],
   "I-ADAPTER": [
     "AY1",
     "D",
@@ -120465,28 +123601,6 @@
     "P",
     "T",
     "ER0"
-  ],
-  "INSTANTID": [
-    "IH1",
-    "N",
-    "S",
-    "T",
-    "AH0",
-    "N",
-    "T",
-    "IH0",
-    "D"
-  ],
-  "SCIKIT-IMAGE": [
-    "S",
-    "IH1",
-    "K",
-    "IH0",
-    "T",
-    "IH2",
-    "M",
-    "IH0",
-    "JH"
   ],
   "IPHONE": [
     "AY1",
@@ -120508,30 +123622,11 @@
     "UH2",
     "K"
   ],
-  "MACBOOKAIR": [
-    "M",
-    "AE0",
-    "K",
-    "B",
-    "UW1",
-    "K",
-    "AA2",
-    "R"
-  ],
   "IMAC": [
     "AY1",
     "M",
     "AE0",
     "K"
-  ],
-  "MACMINI": [
-    "M",
-    "AH0",
-    "K",
-    "M",
-    "IH1",
-    "N",
-    "IY0"
   ],
   "MACPRO": [
     "M",
@@ -120574,21 +123669,6 @@
     "IH0",
     "T"
   ],
-  "TOUCHID": [
-    "T",
-    "AH1",
-    "CH",
-    "IH0",
-    "D"
-  ],
-  "MAGSAFE": [
-    "M",
-    "AE1",
-    "G",
-    "S",
-    "AH0",
-    "F"
-  ],
   "ICLOUD": [
     "AY1",
     "K",
@@ -120614,13 +123694,6 @@
     "AY2",
     "T"
   ],
-  "UIKIT": [
-    "Y",
-    "UW1",
-    "K",
-    "IH0",
-    "T"
-  ],
   "APPKIT": [
     "AE1",
     "P",
@@ -120628,43 +123701,12 @@
     "IH0",
     "T"
   ],
-  "PIXELBUDS": [
-    "P",
-    "IH1",
-    "K",
-    "S",
-    "AH0",
-    "L",
-    "B",
-    "AH0",
-    "G",
-    "Z"
-  ],
   "GMAIL": [
     "JH",
     "IY1",
     "M",
     "EY2",
     "L"
-  ],
-  "GOOGLEDOCS": [
-    "G",
-    "UW1",
-    "G",
-    "L",
-    "EH2",
-    "D",
-    "AO0",
-    "K",
-    "S"
-  ],
-  "YOUTUBE": [
-    "Y",
-    "UW1",
-    "T",
-    "Y",
-    "UW2",
-    "B"
   ],
   "PLAYSTORE": [
     "P",
@@ -120684,23 +123726,6 @@
     "N",
     "T"
   ],
-  "ONEDRIVE": [
-    "W",
-    "AH1",
-    "N",
-    "D",
-    "R",
-    "IH0",
-    "V"
-  ],
-  "POWERTOYS": [
-    "P",
-    "AW1",
-    "ER0",
-    "T",
-    "IY0",
-    "Z"
-  ],
   "XBOX": [
     "EH1",
     "K",
@@ -120718,52 +123743,6 @@
     "T",
     "IH2",
     "N"
-  ],
-  "ABBROBOTICS": [
-    "AE2",
-    "B",
-    "R",
-    "AH0",
-    "B",
-    "AA1",
-    "T",
-    "IH0",
-    "K",
-    "S"
-  ],
-  "TESLAOPTIMUS": [
-    "T",
-    "EH2",
-    "S",
-    "L",
-    "AH0",
-    "P",
-    "EY1",
-    "T",
-    "AH0",
-    "M",
-    "AH0",
-    "S"
-  ],
-  "CARBONBLACK": [
-    "K",
-    "AA1",
-    "R",
-    "B",
-    "AH0",
-    "N",
-    "B",
-    "AE2",
-    "K",
-    "L"
-  ],
-  "CODEQL": [
-    "K",
-    "OW0",
-    "D",
-    "EH1",
-    "K",
-    "L"
   ],
   "ARCSIGHT": [
     "AA1",
@@ -120806,13 +123785,6 @@
     "NG",
     "K"
   ],
-  "LIAUTO": [
-    "L",
-    "IY0",
-    "AA1",
-    "T",
-    "OW0"
-  ],
   "GREATWALL": [
     "G",
     "R",
@@ -120848,51 +123820,11 @@
     "IH0",
     "SH"
   ],
-  "GPTQ-INT": [
-    "G",
-    "AE1",
-    "T",
-    "K",
-    "IH2",
-    "N",
-    "T"
-  ],
-  "REDHATAI": [
-    "R",
-    "EH0",
-    "D",
-    "HH",
-    "AE1",
-    "T",
-    "AH0"
-  ],
-  "AUDIOTECHNICA": [
-    "AO2",
-    "D",
-    "IY0",
-    "OW0",
-    "T",
-    "EH2",
-    "K",
-    "N",
-    "IH1",
-    "SH",
-    "AH0"
-  ],
   "DUCKY": [
     "D",
     "AH1",
     "K",
     "IY2"
-  ],
-  "STEAMDECK": [
-    "S",
-    "T",
-    "EH1",
-    "M",
-    "D",
-    "EH2",
-    "K"
   ],
   "GOPRO": [
     "G",
@@ -120900,25 +123832,6 @@
     "P",
     "R",
     "OW2"
-  ],
-  "OPENCL": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "K",
-    "AH0",
-    "L"
-  ],
-  "OPENBLAS": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "B",
-    "L",
-    "AH0",
-    "S"
   ],
   "OPENFOAM": [
     "OW1",
@@ -120936,25 +123849,6 @@
     "V",
     "Y",
     "UW2"
-  ],
-  "FASTSURFER": [
-    "F",
-    "AE1",
-    "S",
-    "T",
-    "ER0",
-    "F",
-    "ER0",
-    "Z"
-  ],
-  "FREESURFER": [
-    "F",
-    "R",
-    "IY1",
-    "S",
-    "F",
-    "ER0",
-    "ER0"
   ],
   "SOUNDHOUND": [
     "S",
@@ -121006,34 +123900,6 @@
     "L",
     "OW2"
   ],
-  "DEVSTREAM": [
-    "D",
-    "IH0",
-    "V",
-    "S",
-    "T",
-    "R",
-    "IY1",
-    "M"
-  ],
-  "KITOPS": [
-    "K",
-    "IH1",
-    "T",
-    "AH0",
-    "P",
-    "S"
-  ],
-  "LINUXKIT": [
-    "L",
-    "IH0",
-    "N",
-    "AH1",
-    "K",
-    "S",
-    "IH0",
-    "T"
-  ],
   "SUPEREDGE": [
     "S",
     "UW1",
@@ -121061,18 +123927,6 @@
     "EH1",
     "K"
   ],
-  "CONTAINERSSH": [
-    "K",
-    "AH0",
-    "N",
-    "T",
-    "EY1",
-    "N",
-    "ER0",
-    "SH",
-    "IH2",
-    "P"
-  ],
   "CLOUD-NATIVE": [
     "K",
     "L",
@@ -121083,25 +123937,6 @@
     "T",
     "IH0",
     "V"
-  ],
-  "KUBE-HUNTER": [
-    "K",
-    "Y",
-    "UW1",
-    "B",
-    "AH0",
-    "N",
-    "T",
-    "ER0"
-  ],
-  "MORESEC": [
-    "M",
-    "AO1",
-    "R",
-    "IH0",
-    "S",
-    "EH0",
-    "K"
   ],
   "PALADIN": [
     "P",
@@ -121138,23 +123973,6 @@
     "K",
     "S"
   ],
-  "THREATMAPPER": [
-    "TH",
-    "R",
-    "EH1",
-    "T",
-    "M",
-    "AH0",
-    "P",
-    "ER0"
-  ],
-  "VARMOR": [
-    "V",
-    "AA1",
-    "R",
-    "M",
-    "ER0"
-  ],
   "WHITESOURCE": [
     "W",
     "AY1",
@@ -121173,17 +123991,6 @@
     "AO2",
     "R"
   ],
-  "DATENLORD": [
-    "D",
-    "EY1",
-    "T",
-    "AH0",
-    "N",
-    "G",
-    "AA2",
-    "R",
-    "D"
-  ],
   "INFOSCALE": [
     "IH0",
     "N",
@@ -121201,15 +124008,6 @@
     "EY1",
     "AH0",
     "S"
-  ],
-  "QINGSTOR": [
-    "K",
-    "IH1",
-    "NG",
-    "S",
-    "T",
-    "AO2",
-    "R"
   ],
   "SCALEFLASH": [
     "S",
@@ -121246,18 +124044,6 @@
     "N",
     "D"
   ],
-  "KUBESTELLAR": [
-    "K",
-    "Y",
-    "UW1",
-    "B",
-    "IH0",
-    "S",
-    "T",
-    "EH2",
-    "L",
-    "ER0"
-  ],
   "STACKSTORM": [
     "S",
     "T",
@@ -121269,27 +124055,11 @@
     "R",
     "M"
   ],
-  "GO-ZERO": [
-    "G",
-    "OW0",
-    "Z",
-    "EH1",
-    "R",
-    "OW0"
-  ],
   "GOFR": [
     "G",
     "OW1",
     "F",
     "ER0"
-  ],
-  "KRATOS": [
-    "K",
-    "R",
-    "AE1",
-    "T",
-    "AO2",
-    "S"
   ],
   "BUNKERWEB": [
     "B",
@@ -121355,15 +124125,6 @@
     "UW1",
     "P"
   ],
-  "GRAPHSCOPE": [
-    "G",
-    "R",
-    "AE1",
-    "F",
-    "K",
-    "OW2",
-    "P"
-  ],
   "INTERSYSTEMS": [
     "IH1",
     "N",
@@ -121409,23 +124170,6 @@
     "L",
     "OW0"
   ],
-  "KUBEPLUS": [
-    "K",
-    "UW1",
-    "B",
-    "P",
-    "L",
-    "AH0",
-    "S"
-  ],
-  "CLOUDTTY": [
-    "K",
-    "L",
-    "AW1",
-    "D",
-    "T",
-    "IY0"
-  ],
   "DEVSPACE": [
     "D",
     "EH1",
@@ -121444,25 +124188,6 @@
     "AH2",
     "N"
   ],
-  "OPENCHOREO": [
-    "OW2",
-    "P",
-    "IH0",
-    "N",
-    "K",
-    "AO1",
-    "R",
-    "IY0",
-    "OW0"
-  ],
-  "BOCLOUD": [
-    "B",
-    "AH0",
-    "K",
-    "L",
-    "AW1",
-    "D"
-  ],
   "CANONICAL": [
     "K",
     "AH0",
@@ -121473,23 +124198,6 @@
     "K",
     "AH0",
     "L"
-  ],
-  "DAOCLOUD": [
-    "D",
-    "AA1",
-    "K",
-    "L",
-    "AW0",
-    "D"
-  ],
-  "EASYSTACK": [
-    "IY1",
-    "Z",
-    "IH0",
-    "S",
-    "T",
-    "AE2",
-    "K"
   ],
   "GIENTECH": [
     "G",
@@ -121518,17 +124226,6 @@
     "AH0",
     "L"
   ],
-  "STARLINGX": [
-    "S",
-    "T",
-    "AA1",
-    "R",
-    "L",
-    "IH0",
-    "NG",
-    "K",
-    "S"
-  ],
   "PAASTA": [
     "P",
     "AA1",
@@ -121552,16 +124249,6 @@
     "IH0",
     "S"
   ],
-  "EVENTMESH": [
-    "IH0",
-    "V",
-    "EH1",
-    "N",
-    "T",
-    "M",
-    "IH0",
-    "SH"
-  ],
   "PUBNUB": [
     "P",
     "AH1",
@@ -121580,14 +124267,6 @@
     "S",
     "K"
   ],
-  "APPSCALE": [
-    "AH0",
-    "P",
-    "S",
-    "K",
-    "EY1",
-    "L"
-  ],
   "OPENCOST": [
     "OW1",
     "P",
@@ -121598,17 +124277,6 @@
     "S",
     "T"
   ],
-  "STORMFORGE": [
-    "S",
-    "T",
-    "AO1",
-    "R",
-    "M",
-    "F",
-    "AO2",
-    "R",
-    "G"
-  ],
   "APPNETA": [
     "AE0",
     "P",
@@ -121617,16 +124285,6 @@
     "T",
     "AH0"
   ],
-  "APPOPTICS": [
-    "AH0",
-    "P",
-    "AA1",
-    "P",
-    "T",
-    "IH0",
-    "K",
-    "S"
-  ],
   "DEEPFLOW": [
     "D",
     "IY1",
@@ -121634,17 +124292,6 @@
     "F",
     "L",
     "OW2"
-  ],
-  "ELASTIFLOW": [
-    "IH0",
-    "L",
-    "AE1",
-    "S",
-    "T",
-    "IH0",
-    "F",
-    "OW2",
-    "L"
   ],
   "LIGHTSTEP": [
     "L",
@@ -121665,27 +124312,6 @@
     "IH2",
     "P",
     "ER0"
-  ],
-  "OPENLIT": [
-    "AA1",
-    "P",
-    "AH0",
-    "N",
-    "L",
-    "IH0",
-    "T"
-  ],
-  "OPENTRACING": [
-    "OW1",
-    "P",
-    "AH0",
-    "N",
-    "T",
-    "R",
-    "AH0",
-    "S",
-    "IH0",
-    "NG"
   ],
   "OVEROPS": [
     "OW1",
@@ -121715,25 +124341,6 @@
     "EY2",
     "T"
   ],
-  "CLOUDHEALTH": [
-    "K",
-    "L",
-    "AW1",
-    "D",
-    "HH",
-    "AH0",
-    "L",
-    "TH"
-  ],
-  "CLOUDOPS": [
-    "K",
-    "L",
-    "AW1",
-    "D",
-    "AH0",
-    "P",
-    "S"
-  ],
   "FULLSTACKS": [
     "F",
     "UH1",
@@ -121749,14 +124356,6 @@
     "IY1",
     "V",
     "OW0"
-  ],
-  "SOKUBE": [
-    "S",
-    "OW0",
-    "K",
-    "UW1",
-    "B",
-    "IY0"
   ],
   "WHIZUS": [
     "W",
@@ -121888,15 +124487,6 @@
     "EH1",
     "L"
   ],
-  "WASM-PACK": [
-    "W",
-    "AO1",
-    "S",
-    "M",
-    "P",
-    "AE2",
-    "K"
-  ],
   "CLOUDWORKS": [
     "K",
     "L",
@@ -121907,46 +124497,6 @@
     "K",
     "S"
   ],
-  "TRULENS": [
-    "T",
-    "R",
-    "UW1",
-    "L",
-    "AH0",
-    "N",
-    "Z"
-  ],
-  "AIBRIX": [
-    "EY1",
-    "B",
-    "R",
-    "IH0",
-    "K",
-    "S"
-  ],
-  "CARNICE-V": [
-    "K",
-    "AA1",
-    "R",
-    "N",
-    "AH0",
-    "V",
-    "IH0",
-    "S"
-  ],
-  "LITE-INSTRUCT": [
-    "L",
-    "AY1",
-    "T",
-    "AH0",
-    "N",
-    "S",
-    "T",
-    "R",
-    "AH2",
-    "K",
-    "T"
-  ],
   "FLASH-BASE": [
     "F",
     "L",
@@ -121956,92 +124506,11 @@
     "EY2",
     "S"
   ],
-  "FINAL-BENCH": [
-    "F",
-    "AY1",
-    "N",
-    "AH0",
-    "L",
-    "B",
-    "AA2",
-    "N",
-    "CH"
-  ],
-  "BASE-FT": [
-    "B",
-    "EY1",
-    "S",
-    "F",
-    "EH2",
-    "T"
-  ],
-  "AWQ-INT": [
-    "AO1",
-    "K",
-    "W",
-    "IH0",
-    "N",
-    "T"
-  ],
-  "CODE-GGUF": [
-    "K",
-    "OW1",
-    "D",
-    "G",
-    "AH2",
-    "F"
-  ],
-  "DEV-GGUF": [
-    "D",
-    "EH1",
-    "V",
-    "G",
-    "AH2",
-    "F"
-  ],
-  "E-INSTRUCT": [
-    "IH0",
-    "N",
-    "S",
-    "T",
-    "R",
-    "AH1",
-    "K",
-    "T"
-  ],
   "MIMO": [
     "M",
     "IY1",
     "M",
     "OW0"
-  ],
-  "MIMO-V": [
-    "M",
-    "IY1",
-    "M",
-    "OW0",
-    "V"
-  ],
-  "NANO-OMNI": [
-    "N",
-    "AA0",
-    "N",
-    "OW0",
-    "M",
-    "OW1",
-    "N",
-    "IY0"
-  ],
-  "K-INSTRUCT": [
-    "K",
-    "EY1",
-    "N",
-    "S",
-    "T",
-    "R",
-    "AH2",
-    "K",
-    "T"
   ],
   "BLUESTAR": [
     "B",
@@ -122065,45 +124534,11 @@
     "ER0",
     "IY0"
   ],
-  "MOE-A": [
-    "M",
-    "OW1",
-    "AH0"
-  ],
-  "CODER-NEXT": [
-    "K",
-    "AA1",
-    "D",
-    "ER0",
-    "N",
-    "EH2",
-    "K",
-    "S",
-    "T"
-  ],
   "HZ": [
     "HH",
     "ER1",
     "T",
     "Z"
-  ],
-  "DISTILL-V": [
-    "D",
-    "IH0",
-    "S",
-    "T",
-    "IH1",
-    "L",
-    "V"
-  ],
-  "READYART": [
-    "R",
-    "EH1",
-    "D",
-    "Y",
-    "AA2",
-    "R",
-    "T"
   ],
   "DOWNLOADS": [
     "D",
@@ -122113,23 +124548,6 @@
     "OW2",
     "D",
     "Z"
-  ],
-  "GEMMA-GGUF": [
-    "G",
-    "EH1",
-    "M",
-    "AH0",
-    "G",
-    "AH2",
-    "F"
-  ],
-  "ORNITH-AI": [
-    "AO1",
-    "R",
-    "N",
-    "IH0",
-    "TH",
-    "IY0"
   ],
   "BOT": [
     "B",
@@ -122257,14 +124675,6 @@
     "AE2",
     "K"
   ],
-  "ADS-TEC": [
-    "AE1",
-    "D",
-    "S",
-    "T",
-    "EH2",
-    "K"
-  ],
   "AGOMAB": [
     "AE1",
     "G",
@@ -122286,15 +124696,6 @@
     "L",
     "F",
     "AH0"
-  ],
-  "AIRSCULPT": [
-    "EH1",
-    "R",
-    "S",
-    "K",
-    "AH0",
-    "L",
-    "T"
   ],
   "ALKERMES": [
     "AA0",
@@ -122324,15 +124725,6 @@
     "AE2",
     "P"
   ],
-  "APPFOLIO": [
-    "AH0",
-    "P",
-    "F",
-    "OW1",
-    "L",
-    "IY0",
-    "OW0"
-  ],
   "BLOCKCHAIN": [
     "B",
     "L",
@@ -122358,16 +124750,6 @@
     "S",
     "EY2",
     "L"
-  ],
-  "AMERISERV": [
-    "AH0",
-    "M",
-    "EH1",
-    "R",
-    "IH0",
-    "S",
-    "ER0",
-    "S"
   ],
   "ATRICURE": [
     "AE1",
@@ -122397,15 +124779,6 @@
     "S",
     "T"
   ],
-  "ARROWMARK": [
-    "AA1",
-    "R",
-    "OW0",
-    "M",
-    "AA2",
-    "R",
-    "K"
-  ],
   "BIOCARDIA": [
     "B",
     "AY2",
@@ -122428,17 +124801,6 @@
     "AH0",
     "S"
   ],
-  "BIOAFFINITY": [
-    "B",
-    "AY2",
-    "OW0",
-    "F",
-    "IH1",
-    "N",
-    "AH0",
-    "T",
-    "IY0"
-  ],
   "BIO-KEY": [
     "B",
     "AY1",
@@ -122454,22 +124816,6 @@
     "L",
     "AY2",
     "N"
-  ],
-  "BELIVE": [
-    "B",
-    "IH0",
-    "L",
-    "AY1",
-    "V"
-  ],
-  "BRANCHOUT": [
-    "B",
-    "R",
-    "AE1",
-    "N",
-    "CH",
-    "AH0",
-    "T"
   ],
   "PROCAP": [
     "P",
@@ -122499,26 +124845,6 @@
     "IH2",
     "NG"
   ],
-  "BITVENTURES": [
-    "B",
-    "IH1",
-    "T",
-    "V",
-    "AH0",
-    "N",
-    "CH",
-    "ER0",
-    "Z"
-  ],
-  "BRAINSWAY": [
-    "B",
-    "R",
-    "EY1",
-    "N",
-    "S",
-    "W",
-    "EY2"
-  ],
   "BUZZFEED": [
     "B",
     "AH1",
@@ -122526,14 +124852,6 @@
     "F",
     "IY1",
     "D"
-  ],
-  "CAL-MAINE": [
-    "K",
-    "AE1",
-    "L",
-    "M",
-    "AH0",
-    "N"
   ],
   "FREECAST": [
     "F",
@@ -122605,23 +124923,6 @@
     "AA2",
     "R",
     "T"
-  ],
-  "CORVEL": [
-    "K",
-    "AO1",
-    "R",
-    "V",
-    "AH0",
-    "L"
-  ],
-  "COINSHARES": [
-    "K",
-    "OY1",
-    "N",
-    "SH",
-    "AA2",
-    "R",
-    "Z"
   ],
   "CAPSOVISION": [
     "K",
@@ -122720,15 +125021,6 @@
     "AO2",
     "R"
   ],
-  "ESCALADE": [
-    "EH2",
-    "S",
-    "K",
-    "AH0",
-    "L",
-    "AA1",
-    "D"
-  ],
   "EYEPOINT": [
     "AY1",
     "P",
@@ -122760,26 +125052,6 @@
     "T",
     "IH0",
     "V"
-  ],
-  "BANCSYSTEM": [
-    "B",
-    "AE1",
-    "NG",
-    "K",
-    "S",
-    "IY0",
-    "S",
-    "T",
-    "IH2",
-    "M"
-  ],
-  "ONE-HALF": [
-    "W",
-    "AH1",
-    "N",
-    "HH",
-    "AO2",
-    "F"
   ],
   "FINWISE": [
     "F",
@@ -122833,16 +125105,6 @@
     "AY0",
     "M"
   ],
-  "GAMESQUARE": [
-    "G",
-    "EY1",
-    "M",
-    "Z",
-    "K",
-    "W",
-    "EH2",
-    "R"
-  ],
   "LLC": [
     "EH2",
     "L",
@@ -122862,22 +125124,6 @@
     "IY0",
     "AH0"
   ],
-  "GLOBAL-E": [
-    "G",
-    "L",
-    "OW1",
-    "B",
-    "AH0",
-    "L"
-  ],
-  "GEOVAX": [
-    "JH",
-    "IY1",
-    "V",
-    "AE2",
-    "K",
-    "S"
-  ],
   "GREENPOWER": [
     "G",
     "R",
@@ -122886,15 +125132,6 @@
     "P",
     "AW2",
     "ER0"
-  ],
-  "GYRODYNE": [
-    "JH",
-    "IH1",
-    "R",
-    "AH0",
-    "D",
-    "AY0",
-    "N"
   ],
   "HADRON": [
     "HH",
@@ -122910,27 +125147,6 @@
     "P",
     "IY2",
     "K"
-  ],
-  "HEARTSCIENCES": [
-    "HH",
-    "AA1",
-    "R",
-    "T",
-    "S",
-    "AH0",
-    "N",
-    "S",
-    "AH0",
-    "Z"
-  ],
-  "HIGH-TREND": [
-    "HH",
-    "AY1",
-    "T",
-    "R",
-    "AH0",
-    "N",
-    "D"
   ],
   "TUHURA": [
     "T",
@@ -122949,15 +125165,6 @@
     "AA2",
     "K"
   ],
-  "IMMUCELL": [
-    "IH1",
-    "M",
-    "Y",
-    "UW0",
-    "S",
-    "AH0",
-    "L"
-  ],
   "SEASTAR": [
     "S",
     "IY1",
@@ -122971,22 +125178,6 @@
     "N",
     "D",
     "IY0"
-  ],
-  "INMODE": [
-    "IH0",
-    "N",
-    "M",
-    "OW1",
-    "D",
-    "AH0"
-  ],
-  "INNOVAGE": [
-    "IH1",
-    "N",
-    "AH0",
-    "V",
-    "AH0",
-    "JH"
   ],
   "INTERPRIVATE": [
     "IH2",
@@ -123077,20 +125268,6 @@
     "EY2",
     "V"
   ],
-  "LEXINFINTECH": [
-    "L",
-    "EH2",
-    "K",
-    "S",
-    "IH0",
-    "N",
-    "F",
-    "IH1",
-    "N",
-    "K",
-    "AH0",
-    "T"
-  ],
   "MAXSMAKING": [
     "M",
     "AE1",
@@ -123101,15 +125278,6 @@
     "K",
     "IH0",
     "NG"
-  ],
-  "MASTERBEEF": [
-    "M",
-    "AE1",
-    "S",
-    "T",
-    "ER0",
-    "B",
-    "IY2"
   ],
   "METROCITY": [
     "M",
@@ -123122,18 +125290,6 @@
     "T",
     "IY0"
   ],
-  "MASTERCRAFT": [
-    "M",
-    "AE1",
-    "S",
-    "T",
-    "ER0",
-    "K",
-    "AA2",
-    "R",
-    "F",
-    "T"
-  ],
   "SPECTRAL": [
     "S",
     "P",
@@ -123143,16 +125299,6 @@
     "R",
     "AH0",
     "L"
-  ],
-  "MEDIWOUND": [
-    "M",
-    "EH1",
-    "D",
-    "IH0",
-    "W",
-    "AH0",
-    "N",
-    "D"
   ],
   "DATAMEDS": [
     "D",
@@ -123173,17 +125319,6 @@
     "AO0",
     "R",
     "P"
-  ],
-  "MARKETWISE": [
-    "M",
-    "AA1",
-    "R",
-    "K",
-    "AH0",
-    "T",
-    "W",
-    "AY2",
-    "S"
   ],
   "MICROALGO": [
     "M",
@@ -123213,14 +125348,6 @@
     "N",
     "D"
   ],
-  "MAPLIGHT": [
-    "M",
-    "AH0",
-    "P",
-    "L",
-    "AY1",
-    "T"
-  ],
   "MARIS-TECH": [
     "M",
     "EH1",
@@ -123241,17 +125368,6 @@
     "IH1",
     "ZH",
     "AH0",
-    "N"
-  ],
-  "MAXLINEAR": [
-    "M",
-    "AE2",
-    "K",
-    "S",
-    "L",
-    "IH0",
-    "N",
-    "IH1",
     "N"
   ],
   "NOVABRIDGE": [
@@ -123302,15 +125418,6 @@
     "L",
     "D"
   ],
-  "NETSCOUT": [
-    "N",
-    "EH1",
-    "T",
-    "S",
-    "K",
-    "AH0",
-    "T"
-  ],
   "NEXTTRIP": [
     "N",
     "EH1",
@@ -123349,44 +125456,11 @@
     "L",
     "ER0"
   ],
-  "ONKURE": [
-    "AA1",
-    "NG",
-    "K",
-    "Y",
-    "UH0",
-    "R"
-  ],
   "OLLIE'S": [
     "AA1",
     "L",
     "IY0",
     "Z"
-  ],
-  "ONECONSTRUCTION": [
-    "AA2",
-    "N",
-    "AH0",
-    "K",
-    "AH0",
-    "N",
-    "S",
-    "T",
-    "R",
-    "AH1",
-    "K",
-    "SH",
-    "AH0",
-    "N"
-  ],
-  "ONESPAN": [
-    "W",
-    "AH1",
-    "N",
-    "S",
-    "P",
-    "AH0",
-    "N"
   ],
   "PAVMED": [
     "P",
@@ -123430,24 +125504,6 @@
     "K",
     "S"
   ],
-  "PETMED": [
-    "P",
-    "EH1",
-    "T",
-    "M",
-    "IH0",
-    "D"
-  ],
-  "PARK-OHIO": [
-    "P",
-    "AA1",
-    "R",
-    "K",
-    "OW0",
-    "HH",
-    "IY1",
-    "OW0"
-  ],
   "PHARMACYTE": [
     "F",
     "AA1",
@@ -123488,18 +125544,6 @@
     "T",
     "S"
   ],
-  "PRICESMART": [
-    "P",
-    "R",
-    "AY1",
-    "S",
-    "AH0",
-    "S",
-    "M",
-    "AA2",
-    "R",
-    "T"
-  ],
   "PUBMATIC": [
     "P",
     "AH0",
@@ -123509,13 +125553,6 @@
     "T",
     "IH0",
     "K"
-  ],
-  "AUREUS": [
-    "AO1",
-    "R",
-    "EH2",
-    "AH0",
-    "S"
   ],
   "POLYPID": [
     "P",
@@ -123542,17 +125579,6 @@
     "R",
     "IY2",
     "T"
-  ],
-  "QUICKLOGIC": [
-    "K",
-    "W",
-    "IH2",
-    "K",
-    "L",
-    "AO1",
-    "G",
-    "IH0",
-    "K"
   ],
   "RADNET": [
     "R",
@@ -123623,16 +125649,6 @@
     "EH2",
     "K"
   ],
-  "SMARTKEM": [
-    "S",
-    "M",
-    "AA1",
-    "R",
-    "T",
-    "K",
-    "AH0",
-    "M"
-  ],
   "STONEX": [
     "S",
     "T",
@@ -123651,15 +125667,6 @@
     "AA2",
     "M"
   ],
-  "SCISPARC": [
-    "S",
-    "IH1",
-    "S",
-    "P",
-    "AA2",
-    "R",
-    "K"
-  ],
   "SUNPOWER": [
     "S",
     "AH1",
@@ -123667,16 +125674,6 @@
     "P",
     "AW2",
     "ER0"
-  ],
-  "SPACSPHERE": [
-    "S",
-    "P",
-    "AE1",
-    "K",
-    "S",
-    "F",
-    "IY0",
-    "R"
   ],
   "SS": [
     "EH1",
@@ -123722,14 +125719,6 @@
     "SH",
     "AH0",
     "N"
-  ],
-  "SURGEPAYS": [
-    "S",
-    "ER1",
-    "JH",
-    "P",
-    "EY2",
-    "S"
   ],
   "TASKUS": [
     "T",
@@ -123777,24 +125766,6 @@
     "IH0",
     "K",
     "S"
-  ],
-  "TRIO-TECH": [
-    "T",
-    "R",
-    "AY1",
-    "OW0",
-    "T",
-    "EH2",
-    "K"
-  ],
-  "TRUGOLF": [
-    "T",
-    "R",
-    "UW1",
-    "G",
-    "OW0",
-    "L",
-    "F"
   ],
   "UNI-FUELS": [
     "Y",
@@ -123863,41 +125834,6 @@
     "AH0",
     "B"
   ],
-  "VIVOPOWER": [
-    "V",
-    "IH1",
-    "V",
-    "AH0",
-    "P",
-    "AW2",
-    "ER0"
-  ],
-  "VERIFYME": [
-    "V",
-    "EH1",
-    "R",
-    "AH0",
-    "F",
-    "AY2",
-    "M"
-  ],
-  "VERISIGN": [
-    "V",
-    "EH1",
-    "R",
-    "IH0",
-    "S",
-    "IH0",
-    "N"
-  ],
-  "VIASAT": [
-    "V",
-    "AY1",
-    "AH0",
-    "S",
-    "AA0",
-    "T"
-  ],
   "WESBANCO": [
     "W",
     "EH2",
@@ -123917,15 +125853,6 @@
     "T",
     "OW2",
     "N"
-  ],
-  "WILLSCOT": [
-    "W",
-    "IH1",
-    "L",
-    "S",
-    "K",
-    "AH0",
-    "T"
   ],
   "WINTERGREEN": [
     "W",
@@ -123965,26 +125892,6 @@
     "D",
     "UW2"
   ],
-  "J-STAR": [
-    "JH",
-    "IY1",
-    "S",
-    "T",
-    "AA0",
-    "R"
-  ],
-  "DIRECTBOOKING": [
-    "D",
-    "ER0",
-    "IH1",
-    "K",
-    "T",
-    "B",
-    "UH2",
-    "K",
-    "IH0",
-    "NG"
-  ],
   "ZENATECH": [
     "Z",
     "EH1",
@@ -124011,23 +125918,6 @@
     "L",
     "OW1"
   ],
-  "ABCS": [
-    "EY1",
-    "B",
-    "IY2",
-    "S",
-    "IY2",
-    "Z"
-  ],
-  "SMALL-MID": [
-    "S",
-    "M",
-    "AO1",
-    "L",
-    "M",
-    "AH0",
-    "D"
-  ],
   "PROSHARES": [
     "P",
     "R",
@@ -124052,16 +125942,6 @@
     "EH2",
     "M",
     "EY1"
-  ],
-  "ULTRASHORT": [
-    "AH1",
-    "L",
-    "T",
-    "ER0",
-    "SH",
-    "AA2",
-    "R",
-    "T"
   ],
   "CORE-PLUS": [
     "K",
@@ -124094,19 +125974,6 @@
     "T",
     "ER1",
     "M"
-  ],
-  "CORECOMMODITY": [
-    "K",
-    "AO2",
-    "R",
-    "K",
-    "AH0",
-    "M",
-    "AO1",
-    "D",
-    "IH0",
-    "T",
-    "IY0"
   ],
   "CFO": [
     "S",
@@ -124146,19 +126013,6 @@
     "ER0",
     "S"
   ],
-  "SUPERDIVIDEND": [
-    "S",
-    "UW2",
-    "P",
-    "ER0",
-    "D",
-    "IH1",
-    "V",
-    "IH0",
-    "D",
-    "AH0",
-    "N"
-  ],
   "OPTIMIZED": [
     "AA1",
     "P",
@@ -124167,16 +126021,6 @@
     "M",
     "AY2",
     "Z",
-    "D"
-  ],
-  "ALPHADROID": [
-    "AE2",
-    "L",
-    "F",
-    "AH0",
-    "D",
-    "AO1",
-    "R",
     "D"
   ],
   "ALPHADEX": [
@@ -124188,22 +126032,6 @@
     "EH2",
     "K",
     "S"
-  ],
-  "EX-US": [
-    "EH1",
-    "K",
-    "S",
-    "AH0",
-    "S"
-  ],
-  "WESTEND": [
-    "W",
-    "EH1",
-    "S",
-    "T",
-    "AH0",
-    "N",
-    "D"
   ],
   "HEALTHTECH": [
     "HH",
@@ -124230,33 +126058,12 @@
     "AE2",
     "P"
   ],
-  "INSPEREX": [
-    "IH0",
-    "N",
-    "S",
-    "P",
-    "ER1",
-    "K",
-    "AH0",
-    "S"
-  ],
   "AGTECH": [
     "AE1",
     "G",
     "T",
     "EH2",
     "K"
-  ],
-  "STOCKSNIPS": [
-    "S",
-    "T",
-    "AA1",
-    "K",
-    "S",
-    "N",
-    "IH0",
-    "K",
-    "S"
   ],
   "AFTERDARK": [
     "AE1",
@@ -124268,41 +126075,15 @@
     "R",
     "K"
   ],
-  "PUREPLAY": [
-    "P",
-    "Y",
-    "UH1",
-    "R",
-    "AH0",
-    "L",
-    "EY2"
-  ],
   "PHO": [
     "F",
     "OW1"
-  ],
-  "PEAKSHARES": [
-    "P",
-    "IY1",
-    "K",
-    "SH",
-    "AA2",
-    "R",
-    "Z"
   ],
   "ABA": [
     "EY2",
     "B",
     "IY2",
     "EY1"
-  ],
-  "ROCKCREEK": [
-    "R",
-    "AA1",
-    "K",
-    "R",
-    "IY2",
-    "K"
   ],
   "SANJAC": [
     "S",
@@ -124320,16 +126101,6 @@
     "N",
     "EY2",
     "D"
-  ],
-  "ULTRAPRO": [
-    "AH2",
-    "L",
-    "T",
-    "R",
-    "AH0",
-    "P",
-    "R",
-    "AA1"
   ],
   "ACCELERATORS": [
     "AE0",
@@ -124365,16 +126136,6 @@
     "T",
     "ER0"
   ],
-  "TIMESSQUARE": [
-    "T",
-    "AY1",
-    "M",
-    "S",
-    "K",
-    "W",
-    "EH2",
-    "R"
-  ],
   "UFO": [
     "Y",
     "UW2",
@@ -124401,14 +126162,6 @@
     "AE2",
     "P"
   ],
-  "EX-MAG": [
-    "EH1",
-    "K",
-    "S",
-    "M",
-    "AA2",
-    "G"
-  ],
   "TAX-FREE": [
     "T",
     "AE1",
@@ -124426,45 +126179,6 @@
     "F",
     "IH2",
     "N"
-  ],
-  "DEPTH-WISE": [
-    "D",
-    "EH1",
-    "P",
-    "TH",
-    "W",
-    "AY1",
-    "S"
-  ],
-  "CW-ERM": [
-    "K",
-    "ER1",
-    "M"
-  ],
-  "OVER-SAMPLING": [
-    "OW1",
-    "V",
-    "ER0",
-    "S",
-    "AE2",
-    "M",
-    "P",
-    "IH0",
-    "NG"
-  ],
-  "BI-DIRECTIONAL": [
-    "B",
-    "AY0",
-    "D",
-    "EH1",
-    "R",
-    "IH0",
-    "K",
-    "SH",
-    "AH0",
-    "N",
-    "AH0",
-    "L"
   ],
   "CONVOLUTIONAL": [
     "K",
@@ -124563,48 +126277,6 @@
     "S",
     "T"
   ],
-  "CASCADEPSP": [
-    "K",
-    "AE1",
-    "S",
-    "K",
-    "AH0",
-    "D",
-    "P",
-    "IH2",
-    "S"
-  ],
-  "GRAPHSAINT": [
-    "G",
-    "R",
-    "AE1",
-    "F",
-    "S",
-    "AH0",
-    "N",
-    "T"
-  ],
-  "MULTI-ATTENTION": [
-    "M",
-    "AH2",
-    "L",
-    "T",
-    "IY0",
-    "AE1",
-    "N",
-    "T",
-    "IH0",
-    "SH",
-    "AH0",
-    "N"
-  ],
-  "POAPL": [
-    "P",
-    "OW1",
-    "P",
-    "AH0",
-    "L"
-  ],
   "DECLUTR": [
     "D",
     "IH0",
@@ -124613,33 +126285,6 @@
     "AH1",
     "T",
     "ER0"
-  ],
-  "CONVNET": [
-    "K",
-    "AA1",
-    "N",
-    "V",
-    "AH0",
-    "N",
-    "T"
-  ],
-  "RANK-BASED": [
-    "R",
-    "AE1",
-    "NG",
-    "K",
-    "EY2",
-    "S",
-    "T"
-  ],
-  "RANDSOL": [
-    "R",
-    "AE1",
-    "N",
-    "D",
-    "S",
-    "AH0",
-    "L"
   ],
   "PROBABILISTIC": [
     "P",
@@ -124667,15 +126312,6 @@
     "K",
     "AH0"
   ],
-  "HIFI-GAN": [
-    "HH",
-    "AY1",
-    "F",
-    "IH0",
-    "G",
-    "AH0",
-    "N"
-  ],
   "STOCHASTIC": [
     "S",
     "T",
@@ -124687,22 +126323,6 @@
     "IH0",
     "K"
   ],
-  "DETUNING": [
-    "D",
-    "IH0",
-    "T",
-    "AH1",
-    "N",
-    "IH0",
-    "NG"
-  ],
-  "MOGA-B": [
-    "M",
-    "OW1",
-    "G",
-    "AH0",
-    "B"
-  ],
   "DROPATTACK": [
     "D",
     "R",
@@ -124712,16 +126332,6 @@
     "T",
     "AE2",
     "K"
-  ],
-  "PART-BASED": [
-    "P",
-    "AA1",
-    "R",
-    "T",
-    "B",
-    "AE2",
-    "S",
-    "T"
   ],
   "APE-X": [
     "EY1",
@@ -124755,35 +126365,6 @@
     "L",
     "AA2",
     "K"
-  ],
-  "TORCHBEAST": [
-    "T",
-    "AO1",
-    "R",
-    "K",
-    "B",
-    "IY2",
-    "S",
-    "T"
-  ],
-  "GRAPHCL": [
-    "G",
-    "R",
-    "AE1",
-    "F",
-    "AH0",
-    "K",
-    "L"
-  ],
-  "INFOGRAPH": [
-    "IH1",
-    "N",
-    "F",
-    "AH0",
-    "G",
-    "R",
-    "AE2",
-    "F"
   ],
   "BAYESIAN": [
     "B",
@@ -124822,14 +126403,6 @@
     "AH0",
     "L"
   ],
-  "WINTSR": [
-    "W",
-    "IH1",
-    "N",
-    "T",
-    "S",
-    "ER0"
-  ],
   "DISCRIMINATIVE": [
     "D",
     "IH0",
@@ -124844,17 +126417,6 @@
     "T",
     "IH0",
     "V"
-  ],
-  "MIXTEXT": [
-    "M",
-    "IH0",
-    "K",
-    "S",
-    "T",
-    "EH1",
-    "K",
-    "T",
-    "S"
   ],
   "MATRICES": [
     "M",
@@ -124910,25 +126472,6 @@
     "R",
     "IY1"
   ],
-  "PROCAN": [
-    "P",
-    "R",
-    "OW1",
-    "K",
-    "AH0",
-    "N"
-  ],
-  "TRANSFERQA": [
-    "T",
-    "R",
-    "AE0",
-    "N",
-    "S",
-    "F",
-    "ER1",
-    "K",
-    "AH0"
-  ],
   "ASSOCIATIVE": [
     "AH0",
     "S",
@@ -124938,13 +126481,6 @@
     "T",
     "IH2",
     "V"
-  ],
-  "SYNANN": [
-    "S",
-    "IH1",
-    "N",
-    "AH0",
-    "N"
   ],
   "SYNAPTIC": [
     "S",
@@ -125016,20 +126552,6 @@
     "S",
     "T"
   ],
-  "EARLY-LEARNING": [
-    "ER1",
-    "L",
-    "IY0",
-    "L",
-    "ER0",
-    "IH0",
-    "NG"
-  ],
-  "AJAY": [
-    "EH1",
-    "JH",
-    "EY0"
-  ],
   "SINGLE-HEADED": [
     "S",
     "IH1",
@@ -125042,47 +126564,6 @@
     "D",
     "AH0",
     "D"
-  ],
-  "LAYERDROP": [
-    "L",
-    "EY1",
-    "ER0",
-    "D",
-    "R",
-    "AE2",
-    "P"
-  ],
-  "DROPBLOCK": [
-    "D",
-    "R",
-    "AA1",
-    "P",
-    "B",
-    "L",
-    "AH0",
-    "K"
-  ],
-  "CAPSNET": [
-    "K",
-    "AE1",
-    "P",
-    "S",
-    "N",
-    "AH0",
-    "T"
-  ],
-  "RANDOMROTATE": [
-    "R",
-    "AE1",
-    "N",
-    "D",
-    "AH0",
-    "M",
-    "AO2",
-    "R",
-    "T",
-    "EY1",
-    "T"
   ],
   "TIME-AWARE": [
     "T",
@@ -125109,14 +126590,6 @@
     "K",
     "L",
     "IY0"
-  ],
-  "REVNET": [
-    "R",
-    "EH1",
-    "V",
-    "N",
-    "AH0",
-    "T"
   ],
   "COBERL": [
     "K",
@@ -125146,14 +126619,6 @@
     "IY2",
     "ER0"
   ],
-  "MAGFACE": [
-    "M",
-    "AE1",
-    "G",
-    "F",
-    "AH0",
-    "S"
-  ],
   "SLOWFAST": [
     "S",
     "L",
@@ -125162,31 +126627,6 @@
     "AE2",
     "S",
     "T"
-  ],
-  "NON-REDUNDANT": [
-    "N",
-    "AA2",
-    "N",
-    "R",
-    "IH0",
-    "D",
-    "AH1",
-    "N",
-    "CH",
-    "AH0",
-    "N",
-    "D"
-  ],
-  "FUSEFORMER": [
-    "F",
-    "Y",
-    "UW1",
-    "S",
-    "F",
-    "AO2",
-    "R",
-    "M",
-    "ER0"
   ],
   "SUBSPACE": [
     "S",
@@ -125227,16 +126667,6 @@
     "AH0",
     "L"
   ],
-  "BI-LATERAL": [
-    "B",
-    "AY0",
-    "L",
-    "EY1",
-    "T",
-    "ER0",
-    "AH0",
-    "L"
-  ],
   "AMSBOUND": [
     "AE1",
     "M",
@@ -125245,14 +126675,6 @@
     "AW2",
     "N",
     "D"
-  ],
-  "SEGNET": [
-    "S",
-    "EH1",
-    "G",
-    "N",
-    "IH0",
-    "T"
   ],
   "POLARMASK": [
     "P",
@@ -125263,25 +126685,6 @@
     "AE2",
     "S",
     "K"
-  ],
-  "WAVEGAN": [
-    "W",
-    "EY1",
-    "V",
-    "G",
-    "EY2",
-    "N"
-  ],
-  "CONTROLVAE": [
-    "K",
-    "AH0",
-    "N",
-    "T",
-    "R",
-    "OW1",
-    "L",
-    "V",
-    "AH0"
   ],
   "I-BERT": [
     "AY1",
@@ -125301,16 +126704,6 @@
     "IH0",
     "NG"
   ],
-  "DEEPCUBEA": [
-    "D",
-    "IY2",
-    "P",
-    "K",
-    "Y",
-    "UW1",
-    "B",
-    "AH0"
-  ],
   "CONCATENATED": [
     "K",
     "AH0",
@@ -125324,31 +126717,6 @@
     "T",
     "AH0",
     "D"
-  ],
-  "ZOOMNET": [
-    "Z",
-    "UW1",
-    "M",
-    "N",
-    "AH0",
-    "T"
-  ],
-  "MIXCONV": [
-    "M",
-    "IH1",
-    "K",
-    "S",
-    "K",
-    "AA0",
-    "V"
-  ],
-  "MULTIKE": [
-    "M",
-    "AH1",
-    "L",
-    "T",
-    "IH0",
-    "K"
   ],
   "MULTI-VIEW": [
     "M",
@@ -125380,33 +126748,6 @@
     "S",
     "T"
   ],
-  "TINAFACE": [
-    "T",
-    "IH1",
-    "N",
-    "AH0",
-    "F",
-    "EY2",
-    "S"
-  ],
-  "PIPEMARE": [
-    "P",
-    "AY2",
-    "P",
-    "AH0",
-    "M",
-    "EH1",
-    "R",
-    "AH0"
-  ],
-  "DIFFPOOL": [
-    "D",
-    "IH1",
-    "F",
-    "P",
-    "UH2",
-    "L"
-  ],
   "PARSIMONIOUS": [
     "P",
     "AA2",
@@ -125419,24 +126760,6 @@
     "IY0",
     "AH0",
     "S"
-  ],
-  "TRANSE": [
-    "T",
-    "R",
-    "AE1",
-    "N",
-    "Z"
-  ],
-  "MULTIGRAIN": [
-    "M",
-    "AH2",
-    "L",
-    "T",
-    "IY0",
-    "G",
-    "R",
-    "IY1",
-    "N"
   ],
   "DEEP-MAC": [
     "D",
@@ -125462,24 +126785,6 @@
     "P",
     "B",
     "ER0",
-    "T"
-  ],
-  "GRIDMASK": [
-    "G",
-    "R",
-    "IH1",
-    "D",
-    "M",
-    "AH0",
-    "S",
-    "K"
-  ],
-  "MACBERT": [
-    "M",
-    "AH0",
-    "K",
-    "B",
-    "ER1",
     "T"
   ],
   "TAYPO": [
@@ -125578,29 +126883,11 @@
     "OY2",
     "D"
   ],
-  "VOCGAN": [
-    "V",
-    "AA1",
-    "K",
-    "AH0",
-    "G",
-    "N"
-  ],
   "SCHNET": [
     "SH",
     "N",
     "EH1",
     "T"
-  ],
-  "COORDCONV": [
-    "K",
-    "UH1",
-    "R",
-    "D",
-    "K",
-    "AA2",
-    "N",
-    "K"
   ],
   "CUTBLUR": [
     "K",
@@ -125628,52 +126915,12 @@
     "K",
     "S"
   ],
-  "SCAN-CLUSTERING": [
-    "S",
-    "K",
-    "AE1",
-    "N",
-    "K",
-    "L",
-    "AH0",
-    "S",
-    "T",
-    "W",
-    "ER2",
-    "IH0",
-    "NG"
-  ],
   "NEIGHBOURS": [
     "N",
     "EY1",
     "B",
     "ER0",
     "Z"
-  ],
-  "HARM-NET": [
-    "HH",
-    "AA1",
-    "R",
-    "M",
-    "N",
-    "AH0",
-    "T"
-  ],
-  "EIGENMAP": [
-    "AY1",
-    "G",
-    "N",
-    "M",
-    "AE2",
-    "P"
-  ],
-  "MELGAN": [
-    "M",
-    "EH1",
-    "L",
-    "G",
-    "AH0",
-    "N"
   ],
   "MULTI-HEADS": [
     "M",
@@ -125710,14 +126957,6 @@
     "AH2",
     "P"
   ],
-  "MODNET": [
-    "M",
-    "AA1",
-    "D",
-    "N",
-    "AH0",
-    "T"
-  ],
   "THUNDERNET": [
     "TH",
     "AH1",
@@ -125735,29 +126974,12 @@
     "AA0",
     "N"
   ],
-  "UFLOSS": [
-    "AH1",
-    "F",
-    "L",
-    "AO2",
-    "S"
-  ],
   "ABC": [
     "EY1",
     "B",
     "IY2",
     "S",
     "IY2"
-  ],
-  "CONVNETS": [
-    "K",
-    "AA1",
-    "N",
-    "V",
-    "AH0",
-    "N",
-    "T",
-    "S"
   ],
   "INFOGAN": [
     "IH1",
@@ -125766,14 +126988,6 @@
     "OW0",
     "G",
     "AE2",
-    "N"
-  ],
-  "SHAPECONV": [
-    "SH",
-    "EY1",
-    "P",
-    "K",
-    "AA2",
     "N"
   ],
   "ARCFACE": [
@@ -125811,24 +127025,6 @@
     "SH",
     "AA2",
     "T"
-  ],
-  "CONVBERT": [
-    "K",
-    "AA1",
-    "N",
-    "V",
-    "AH0",
-    "B",
-    "ER0",
-    "T"
-  ],
-  "HYPERSA": [
-    "HH",
-    "AY2",
-    "P",
-    "ER0",
-    "S",
-    "AA1"
   ],
   "HYPERGRAPH": [
     "HH",
@@ -125870,16 +127066,6 @@
     "L",
     "IY2"
   ],
-  "SELF-MEM": [
-    "S",
-    "EH1",
-    "L",
-    "F",
-    "M",
-    "IY0",
-    "EH1",
-    "M"
-  ],
   "SYMMETRIC": [
     "S",
     "AH0",
@@ -125889,27 +127075,6 @@
     "R",
     "IH0",
     "K"
-  ],
-  "SUPPORT-SET": [
-    "S",
-    "AH0",
-    "P",
-    "AO1",
-    "R",
-    "T",
-    "AH0",
-    "S",
-    "T"
-  ],
-  "PRE-TRAINED": [
-    "P",
-    "R",
-    "EY1",
-    "T",
-    "R",
-    "EY2",
-    "N",
-    "D"
   ],
   "PIXEL-BERT": [
     "P",
@@ -125921,25 +127086,6 @@
     "B",
     "ER0",
     "T"
-  ],
-  "SORTCUT": [
-    "S",
-    "AO1",
-    "R",
-    "K",
-    "T",
-    "AH2",
-    "T"
-  ],
-  "POLYNORM": [
-    "P",
-    "AA1",
-    "L",
-    "IH0",
-    "N",
-    "AO2",
-    "R",
-    "M"
   ],
   "MIRROR-BERT": [
     "M",
@@ -125968,17 +127114,6 @@
     "T",
     "ER0"
   ],
-  "INPLACE-ABN": [
-    "IH0",
-    "N",
-    "P",
-    "L",
-    "EY1",
-    "S",
-    "B",
-    "AH0",
-    "N"
-  ],
   "IN-PLACE": [
     "IH1",
     "N",
@@ -125986,16 +127121,6 @@
     "L",
     "EY2",
     "S"
-  ],
-  "TIME-CAUSAL": [
-    "T",
-    "AY2",
-    "M",
-    "AH0",
-    "K",
-    "AO1",
-    "Z",
-    "AH0"
   ],
   "SCALE-SPACE": [
     "S",
@@ -126015,15 +127140,6 @@
     "R",
     "EH2",
     "K"
-  ],
-  "REVSILO": [
-    "R",
-    "EH0",
-    "V",
-    "IH1",
-    "S",
-    "L",
-    "OW0"
   ],
   "AGGMO": [
     "AE1",
@@ -126077,13 +127193,6 @@
     "S",
     "L",
     "UW0"
-  ],
-  "BIGAN": [
-    "B",
-    "IH1",
-    "G",
-    "AH0",
-    "N"
   ],
   "QUICKBOOKS": [
     "K",
@@ -126151,16 +127260,6 @@
     "AO2",
     "T",
     "ER0"
-  ],
-  "POLYCONV": [
-    "P",
-    "AA1",
-    "L",
-    "IH0",
-    "K",
-    "AA2",
-    "V",
-    "N"
   ],
   "STEP-WISE": [
     "S",
@@ -126241,30 +127340,12 @@
     "EY2",
     "S"
   ],
-  "MULTI-LAYER": [
-    "M",
-    "AH1",
-    "L",
-    "T",
-    "IY0",
-    "L",
-    "EY2",
-    "R"
-  ],
   "CARAFE": [
     "K",
     "AH0",
     "R",
     "AE1",
     "F"
-  ],
-  "PAFNET": [
-    "P",
-    "AE1",
-    "F",
-    "N",
-    "AH0",
-    "T"
   ],
   "GATING": [
     "G",
@@ -126280,17 +127361,6 @@
     "L",
     "EY2",
     "ER0"
-  ],
-  "DELTACONV": [
-    "D",
-    "EH1",
-    "L",
-    "T",
-    "AH0",
-    "K",
-    "AA0",
-    "N",
-    "T"
   ],
   "PIPEDREAM": [
     "P",
@@ -126309,33 +127379,6 @@
     "N",
     "EH2",
     "T"
-  ],
-  "GREEDYNAS": [
-    "G",
-    "R",
-    "IY1",
-    "D",
-    "IH0",
-    "N",
-    "AH0",
-    "S"
-  ],
-  "LITESEG": [
-    "L",
-    "AY1",
-    "T",
-    "S",
-    "AH0",
-    "G"
-  ],
-  "POLYCAM": [
-    "P",
-    "AA1",
-    "L",
-    "IH0",
-    "K",
-    "AE2",
-    "M"
   ],
   "INTERBERT": [
     "IH1",
@@ -126398,22 +127441,6 @@
     "S",
     "T"
   ],
-  "AMSGRAD": [
-    "AE1",
-    "M",
-    "Z",
-    "R",
-    "AE0",
-    "D"
-  ],
-  "BASNET": [
-    "B",
-    "AE1",
-    "S",
-    "N",
-    "AH0",
-    "T"
-  ],
   "CUBERT": [
     "K",
     "Y",
@@ -126439,17 +127466,6 @@
     "W",
     "EY2",
     "T"
-  ],
-  "TEXTGRAD": [
-    "T",
-    "EH1",
-    "K",
-    "T",
-    "S",
-    "G",
-    "R",
-    "AE2",
-    "D"
   ],
   "MIXNET": [
     "M",
@@ -126478,24 +127494,6 @@
     "EH2",
     "T"
   ],
-  "GROUP-AWARE": [
-    "G",
-    "R",
-    "UW1",
-    "P",
-    "AH0",
-    "W",
-    "AO2",
-    "R"
-  ],
-  "SYMMNET": [
-    "S",
-    "IH1",
-    "M",
-    "N",
-    "AH0",
-    "T"
-  ],
   "ADADELTA": [
     "AE2",
     "D",
@@ -126514,25 +127512,6 @@
     "IH2",
     "NG",
     "K"
-  ],
-  "CAYLEYNET": [
-    "K",
-    "EY1",
-    "L",
-    "IY0",
-    "AH0",
-    "N",
-    "T"
-  ],
-  "ALPHAZERO": [
-    "AE2",
-    "L",
-    "F",
-    "AH0",
-    "Z",
-    "AA1",
-    "R",
-    "OW0"
   ],
   "PRE-NORM": [
     "P",
@@ -126621,32 +127600,6 @@
     "T",
     "S"
   ],
-  "ANTI-SPOOFING": [
-    "AE0",
-    "N",
-    "T",
-    "IH1",
-    "S",
-    "P",
-    "OW2",
-    "F",
-    "IH0",
-    "NG"
-  ],
-  "FRANCO-ARABIC": [
-    "F",
-    "R",
-    "AE2",
-    "NG",
-    "K",
-    "OW0",
-    "AE1",
-    "K",
-    "R",
-    "AH0",
-    "B",
-    "IY0"
-  ],
   "GRAD-CAM": [
     "G",
     "R",
@@ -126688,15 +127641,6 @@
     "T",
     "IH0",
     "K"
-  ],
-  "DREAMBOOTH": [
-    "D",
-    "R",
-    "IY1",
-    "M",
-    "B",
-    "AW2",
-    "TH"
   ],
   "OPENFAAS": [
     "OW1",
