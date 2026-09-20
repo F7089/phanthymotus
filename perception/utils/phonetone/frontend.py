@@ -109,6 +109,12 @@ def _custom_en() -> dict:
     return json.loads((_release() / "custom_en_pronunciations.json").read_text(encoding="utf-8"))
 
 
+@lru_cache(maxsize=1)
+def _gold_en() -> dict[str, tuple[str, ...]]:
+    """Git-tracked gold ARPAbet. Token lookup only; not company longest-match."""
+    return _load_arpa_lexicon(Path(__file__).with_name("en_gold_pronunciations.json"))
+
+
 def _load_arpa_lexicon(path: Path) -> dict[str, tuple[str, ...]]:
     if not path.is_file():
         return {}
@@ -281,6 +287,15 @@ def _company_en_map() -> dict[str, tuple[str, ...]]:
 
 
 def _en_phones(word: str):
+    upper = word.upper()
+    pronunciation = (
+        _custom_en().get(upper)
+        or _gold_en().get(upper)
+        or _company_en_map().get(upper)
+        or _cmu().get(upper)
+    )
+    if pronunciation is not None:
+        return _arpa_list_to_phones(pronunciation)
     if "-" in word:
         phones, tones = [], []
         for part in word.split("-"):
@@ -291,23 +306,15 @@ def _en_phones(word: str):
             tones.extend(part_tones)
         if phones:
             return phones, tones
-    upper = word.upper()
-    pronunciation = (
-        _custom_en().get(upper)
-        or _company_en_map().get(upper)
-        or _cmu().get(upper)
-    )
-    if pronunciation is None:
-        parts = _split_en_token(word)
-        if len(parts) > 1:
-            phones, tones = [], []
-            for part in parts:
-                part_phones, part_tones = _en_phones(part)
-                phones.extend(part_phones)
-                tones.extend(part_tones)
-            return phones, tones
-        pronunciation = _letter_arpa(word)
-    return _arpa_list_to_phones(pronunciation)
+    parts = _split_en_token(word)
+    if len(parts) > 1:
+        phones, tones = [], []
+        for part in parts:
+            part_phones, part_tones = _en_phones(part)
+            phones.extend(part_phones)
+            tones.extend(part_tones)
+        return phones, tones
+    return _arpa_list_to_phones(_letter_arpa(word))
 
 
 def _arpa_list_to_phones(pronunciation) -> tuple[list[str], list[int]]:

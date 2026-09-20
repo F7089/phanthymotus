@@ -64,5 +64,7 @@
   "RUNTIME": ["R", "AH1", "N", "T", "AY2", "M"],
   "ONNXRUNTIME": ["AA1", "N", "IH0", "K", "S", "R", "AH1", "N", "T", "AY2", "M"],
   "AIOS": ["EY1", "AY1", "OW1", "EH1", "S"],
-  "SAGEAIOS": ["S", "EY1", "JH", "EY1", "AY1", "OW1", "EH1", "S"]
+  "SAGEAIOS": ["S", "EY1", "JH", "EY1", "AY1", "OW1", "EH1", "S"],
+  "MOTUS": ["M", "OW1", "T", "AH0", "S"],
+  "PHANTHY MOTUS": ["F", "AE1", "N", "S", "IY0", "M", "OW1", "T", "AH0", "S"]
 }
