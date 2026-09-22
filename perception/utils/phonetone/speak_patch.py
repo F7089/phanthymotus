@@ -103,6 +103,17 @@ _LAST_N_DIGITS = re.compile(
     r"((?:最后|末尾|后)\s*[一二三四五六七八九十两\d]+\s*位)\s*[是为:：]?\s*([0-9]{2,})"
 )
 
+# Acronym+≥+number+unit is tagged as math "…二" plus measure "八分贝".
+# Expand the operator first so 28 stays one cardinal (二十八). Only when a
+# digit follows, so arrows like -> are left alone.
+_CMP_BEFORE_NUM = (
+    (re.compile(r">=\s*(?=\d)"), "大于等于"),
+    (re.compile(r"≤\s*(?=\d)|<=\s*(?=\d)"), "小于等于"),
+    (re.compile(r"≥\s*(?=\d)"), "大于等于"),
+    (re.compile(r"(?<![<>=])>\s*(?=\d)"), "大于"),
+    (re.compile(r"(?<![<>=])<\s*(?=\d)"), "小于"),
+)
+
 # Hold URLs so later slash/minus rules cannot rewrite path segments.
 _URL_HOLD = re.compile(r"(?i)\bhttps?://[^\s，。；！？,]+|\bwww\.[^\s，。；！？,]+")
 _URL_PARSE = re.compile(r"(?i)^(https?)://([^/\s]+)(/.*)?$")
@@ -205,6 +216,9 @@ def patch_speak_text(text: str) -> str:
 
     # Ensure serial cue + digits stay adjacent for TN digit verbalizer.
     out = _SERIAL_SPACED.sub(r"\1\2", out)
+
+    for pattern, repl in _CMP_BEFORE_NUM:
+        out = pattern.sub(repl, out)
 
     def _restore_url(match: re.Match) -> str:
         index = _alpha_id_value(match.group(1))
