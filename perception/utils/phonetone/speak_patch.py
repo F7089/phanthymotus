@@ -12,11 +12,15 @@ import re
 _DASH_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d]")
 
 # Hard replacements first — never rely on TN for these slash pairs.
+# 企业级 + noun: Matcha lengthens the blank after 级. 的 changes that phone context.
+# 企业级AI stays a language switch if 的 is inserted in front of AI, so read AI in Chinese.
 _HARD_REPLACEMENTS = (
     (re.compile(r"(?i)MCP\s*[/／∕⁄]\s*DDS"), "MCP DDS"),
     (re.compile(r"(?i)TCP\s*[/／∕⁄]\s*IP"), "TCP IP"),
     # NO.0917 → number 0917 (TN then reads digits one-by-one).
     (re.compile(r"(?i)\bNO\s*\.\s*(?=\d)"), "number "),
+    (re.compile(r"企业级的?\s*AI(?![A-Za-z])"), "企业级的人工智能"),
+    (re.compile(r"企业级(?!的)(?=[\u4e00-\u9fff])"), "企业级的"),
 )
 
 # SI-ish units glued to a number. Avoid bare "A" in model ids (A-10, A1024).
