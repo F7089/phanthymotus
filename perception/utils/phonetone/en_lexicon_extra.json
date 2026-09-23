@@ -1,5 +1,5 @@
 {
-  "QWEN": ["K", "W", "EH1", "N"],
+  "QWEN": ["K", "W", "IY1", "N"],
   "ANTHROPIC": ["AE1", "N", "TH", "R", "AA0", "P", "IH0", "K"],
   "GROK": ["G", "R", "AA1", "K"],
   "GROQ": ["G", "R", "AA1", "K"],
@@ -66,5 +66,6 @@
   "AIOS": ["EY1", "AY1", "OW1", "EH1", "S"],
   "SAGEAIOS": ["S", "EY1", "JH", "EY1", "AY1", "OW1", "EH1", "S"],
   "MOTUS": ["M", "OW1", "T", "AH0", "S"],
-  "PHANTHY MOTUS": ["F", "AE1", "N", "S", "IY0", "M", "OW1", "T", "AH0", "S"]
+  "PHANTHY MOTUS": ["F", "AE1", "N", "S", "IY0", "M", "OW1", "T", "AH0", "S"],
+  "PHANTHYMOTUS": ["F", "AE1", "N", "S", "IY0", "M", "OW1", "T", "AH0", "S"]
 }
