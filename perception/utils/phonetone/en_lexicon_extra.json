@@ -65,6 +65,8 @@
   "ONNXRUNTIME": ["AA1", "N", "IH0", "K", "S", "R", "AH1", "N", "T", "AY2", "M"],
   "AIOS": ["EY1", "AY1", "OW1", "EH1", "S"],
   "SAGEAIOS": ["S", "EY1", "JH", "EY1", "AY1", "OW1", "EH1", "S"],
+  "HAMI": ["HH", "AA1", "M", "IY0"],
+  "HAMI VGPU": ["HH", "AA1", "M", "IY0", "V", "IY1", "JH", "IY1", "P", "IY1", "Y", "UW1"],
   "MOTUS": ["M", "OW1", "T", "AH0", "S"],
   "PHANTHY MOTUS": ["F", "AE1", "N", "S", "IY0", "M", "OW1", "T", "AH0", "S"],
   "PHANTHYMOTUS": ["F", "AE1", "N", "S", "IY0", "M", "OW1", "T", "AH0", "S"]
